@@ -1,0 +1,105 @@
+name: tracegrade
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tracegrade}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tracegrade}
+      POSTGRES_DB: ${POSTGRES_DB:-tracegrade}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  temporal:
+    image: temporalio/auto-setup:1.27.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-tracegrade}
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-tracegrade}
+      POSTGRES_SEEDS: postgres
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+    ports:
+      - "${TEMPORAL_PORT:-7233}:7233"
+    volumes:
+      - ./infra/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
+    restart: unless-stopped
+
+  temporal-ui:
+    image: temporalio/ui:2.34.0
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "${TEMPORAL_UI_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      TRACEGRADE_ENVIRONMENT: ${TRACEGRADE_ENVIRONMENT:-development}
+      TRACEGRADE_ADMIN_KEY: ${TRACEGRADE_ADMIN_KEY:-change-me-before-public-deployment}
+      TRACEGRADE_DATABASE_URL: ${TRACEGRADE_DATABASE_URL:-postgresql+asyncpg://tracegrade:tracegrade@postgres:5432/tracegrade}
+      TRACEGRADE_TEMPORAL_ADDRESS: ${TRACEGRADE_TEMPORAL_ADDRESS:-temporal:7233}
+      TRACEGRADE_TEMPORAL_NAMESPACE: ${TRACEGRADE_TEMPORAL_NAMESPACE:-default}
+      TRACEGRADE_TEMPORAL_TASK_QUEUE: ${TRACEGRADE_TEMPORAL_TASK_QUEUE:-tracegrade-experiments}
+      TRACEGRADE_CORS_ORIGINS: ${TRACEGRADE_CORS_ORIGINS:-http://localhost:3000}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=2)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./worker
+    depends_on:
+      - temporal
+    environment:
+      TRACEGRADE_TEMPORAL_ADDRESS: ${TRACEGRADE_TEMPORAL_ADDRESS:-temporal:7233}
+      TRACEGRADE_TEMPORAL_NAMESPACE: ${TRACEGRADE_TEMPORAL_NAMESPACE:-default}
+      TRACEGRADE_TEMPORAL_TASK_QUEUE: ${TRACEGRADE_TEMPORAL_TASK_QUEUE:-tracegrade-experiments}
+      TRACEGRADE_DATABASE_URL: ${TRACEGRADE_DATABASE_URL:-postgresql+asyncpg://tracegrade:tracegrade@postgres:5432/tracegrade}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api/v1}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
