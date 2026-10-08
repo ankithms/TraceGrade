@@ -130,3 +130,35 @@ async def test_concurrent_conflicting_completions(postgres_client):
     async with factory() as session:
         record = await session.get(Trace, UUID(trace.json()["id"]))
         assert record.status == winner["status"]
+
+
+@pytest.mark.asyncio
+async def test_trace_browsing_round_trip(postgres_client):
+    client, headers, _, project_id = postgres_client
+    trace = await client.post("/api/v1/traces", json=TRACE, headers=headers)
+    assert trace.status_code == 201
+    span_payload = {
+        **SPAN,
+        "status": "ok",
+        "started_at": "2026-10-08T15:30:01+05:30",
+        "ended_at": "2026-10-08T10:00:02Z",
+        "input": {"prompt": "review"},
+        "output": ["complete"],
+        "estimated_cost_usd": "0.0000012345",
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "total_tokens": 15,
+    }
+    span = await client.post(
+        f"/api/v1/traces/{trace.json()['id']}/spans", json=span_payload, headers=headers
+    )
+    assert span.status_code == 201
+    listing = await client.get("/api/v1/traces?limit=1", headers=headers)
+    assert listing.status_code == 200
+    assert listing.json() == {"items": [trace.json()], "total": 1}
+    detail = await client.get(f"/api/v1/traces/{trace.json()['id']}", headers=headers)
+    assert detail.status_code == 200
+    assert detail.json() == {**trace.json(), "spans": [span.json()]}
+    assert detail.json()["project_id"] == str(project_id)
+    assert detail.json()["spans"][0]["started_at"] == "2026-10-08T10:00:01Z"
+    assert detail.json()["spans"][0]["estimated_cost_usd"] == "0.0000012345"

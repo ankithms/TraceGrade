@@ -113,3 +113,12 @@ class SpanResponse(TraceResponse):
     latency_ms: int | None
     estimated_cost_usd: Decimal | None
     error_message: str | None
+
+
+class TraceListResponse(BaseModel):
+    items: list[TraceResponse]
+    total: int
+
+
+class TraceDetailResponse(TraceResponse):
+    spans: list[SpanResponse]
