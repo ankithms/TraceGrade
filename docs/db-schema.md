@@ -71,6 +71,18 @@ Unique: (`project_id`, `external_id`).
 
 Unique: (`project_id`, `external_id`). Index: (`trace_id`, `started_at`).
 
+Trace/span schema implementation:
+
+- Composite foreign keys require a span's project to match its trace, and a parent
+  span to belong to the same trace and project. A span cannot reference itself.
+- Project, trace, and parent-span deletion cascades to dependent spans.
+- Non-negative metric checks are enforced in the database; unknown metrics may be null.
+- Estimated cost uses `NUMERIC(20, 10)` to preserve small fractional USD amounts.
+- `execution_status` is shared by traces and spans; `span_kind` is a separate
+  PostgreSQL enum. Migration rollback removes both types after dropping the tables.
+- Payload size limits and full ancestry-cycle validation belong to ingestion APIs.
+
+
 ### `datasets`
 
 | Column | Type | Notes |
