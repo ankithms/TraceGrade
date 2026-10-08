@@ -1,8 +1,8 @@
 # TraceGrade Python SDK
 
 A synchronous Python 3.10+ client for recording traces and nested spans. It sends
-start and completion snapshots to the TraceGrade API and preserves stable
-external IDs throughout an operation.
+start snapshots immediately and batches completed span snapshots, preserving
+stable external IDs throughout an operation.
 
 ## Install
 
@@ -78,19 +78,54 @@ provider or run evaluations.
 
 ## Delivery behavior
 
-This branch sends each start/completion immediately with a finite HTTP timeout
-(default 5 seconds). Batching, explicit flush and bounded retries are the next
-SDK milestone.
+Trace/span starts are sent immediately so parent server IDs are available before
+children start. Completed span snapshots are queued and batched per trace. They
+flush at the configured threshold, at trace completion, on `client.flush()`, and
+when closing the client. No batch contains more than 100 spans or mixes traces.
+Set `batch_size=1` to send completion snapshots through the single-span endpoint.
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `timeout` | `5.0` | Finite HTTP timeout in seconds. |
+| `batch_size` | `100` | Completion batch size, from 1 to 100. |
+| `max_pending_spans` | `1000` | Bound on queued completion snapshots. |
+| `max_retries` | `2` | Extra attempts, from 0 to 10. |
+| `retry_backoff` | `0.1` | Initial exponential retry delay in seconds. |
+| `max_retry_delay` | `2.0` | Cap on backoff and `Retry-After` delays. |
+
+Retries handle network/timeouts, remote protocol interruptions and HTTP
+408/429/500/502/503/504. Authentication, validation, identity conflicts, redirects
+and malformed success responses are not retried. Snapshot IDs and final metadata
+remain unchanged across retries, including when a response is lost after commit.
+
+Batch responses are validated before acknowledgement. Accepted items are removed,
+permanent item failures are recorded and discarded, and only transient failed
+items are retried. Whole-request and item retries share one attempt budget.
 
 Delivery is best effort by default. HTTP, transport and protocol failures are
 available through `client.delivery_errors`, which retains the latest 100 errors
 without response bodies, model payloads or credentials. An unavailable parent
-prevents descendant delivery, avoiding incorrectly attached spans. Local argument
-validation errors still raise `ValueError`.
+prevents descendant delivery. Local argument validation errors raise `ValueError`.
 
-Use `raise_on_error=True` to surface delivery failures as `TraceGradeError` during
-setup or tests. An existing application exception takes precedence even in this
-mode. Close the client with a `with` block or `client.close()`.
+After transient retries are exhausted, completions remain queued. Automatic
+flushes do not restart their retry budget. Call `client.flush()` explicitly while
+the client is open to attempt recovery with a fresh bounded budget:
+
+```python
+if not client.flush():
+    print("Pending span completions:", client.pending_spans)
+```
+
+`flush()` returns true when all selected updates are acknowledged and false when
+any delivery fails. A full queue records `queue_full` and drops the new completion
+rather than growing indefinitely. The queue is in memory; closing the client ends
+delivery and does not persist unresolved telemetry. There is no background thread
+or timer.
+
+Use `raise_on_error=True` to surface new delivery failures as `TraceGradeError`.
+Existing application exceptions take precedence, including during automatic
+flush and client close. Closing is idempotent and closes the transport even when
+a strict-mode flush fails. Use a `with` block or `client.close()`.
 
 ## Development
 
@@ -106,4 +141,5 @@ pytest
 The real API round-trip test is opt-in. Set `TRACEGRADE_TEST_API_URL` to an
 isolated running API's `/api/v1` URL and `TRACEGRADE_TEST_ADMIN_KEY` to its admin
 key, then run `pytest tests/test_api_integration.py`. The test creates and removes
-its own project, verifies nested spans and errors, and makes no AI-provider calls.
+its own projects, verifies nested spans/errors and retries after simulated lost
+acknowledgements, and makes no AI-provider calls.

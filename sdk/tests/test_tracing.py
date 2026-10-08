@@ -10,6 +10,10 @@ import pytest
 from tracegrade import Span, Trace, TraceGrade, TraceGradeError
 
 
+def make_client(api_key, **kwargs):
+    return TraceGrade(api_key, batch_size=1, max_retries=0, **kwargs)
+
+
 class Recorder:
     def __init__(self):
         self.requests = []
@@ -31,7 +35,7 @@ def recorder():
 
 @pytest.fixture
 def client(recorder):
-    with TraceGrade("tg_test_secret", transport=httpx.MockTransport(recorder)) as client:
+    with make_client("tg_test_secret", transport=httpx.MockTransport(recorder)) as client:
         yield client
 
 
@@ -156,7 +160,7 @@ def test_failed_parent_delivery_skips_descendants():
         requests.append(request)
         return httpx.Response(503)
 
-    with TraceGrade("secret", transport=httpx.MockTransport(failure)) as client:
+    with make_client("secret", transport=httpx.MockTransport(failure)) as client:
         with client.trace("review") as trace:
             with trace.span("parent") as parent:
                 with parent.span("child"):
@@ -174,7 +178,7 @@ def test_unavailable_span_does_not_create_orphan_child(recorder):
             return httpx.Response(503)
         return recorder(request)
 
-    with TraceGrade("secret", transport=httpx.MockTransport(failure)) as client:
+    with make_client("secret", transport=httpx.MockTransport(failure)) as client:
         with client.trace("review") as trace:
             with trace.span("parent") as parent:
                 with parent.span("child"):
@@ -195,7 +199,7 @@ def test_http_failures_are_safe_and_not_retried(status):
         requests.append(request)
         return httpx.Response(status, json={"message": "secret prompt"})
 
-    with TraceGrade("secret-key", transport=httpx.MockTransport(failure)) as client:
+    with make_client("secret-key", transport=httpx.MockTransport(failure)) as client:
         with client.trace("review"):
             pass
         assert client.delivery_errors[0].status_code == status
@@ -208,7 +212,7 @@ def test_http_failures_are_safe_and_not_retried(status):
     [None, [], {}, {"id": 42}, {"id": "invalid"}, {"id": str(uuid4()), "external_id": "wrong"}],
 )
 def test_invalid_responses_are_delivery_errors(payload):
-    with TraceGrade(
+    with make_client(
         "secret", transport=httpx.MockTransport(lambda _: httpx.Response(200, json=payload))
     ) as client:
         with client.trace("review"):
@@ -220,7 +224,7 @@ def test_transport_failure_is_safe():
     def failure(request):
         raise httpx.ConnectError("secret key in unsafe exception", request=request)
 
-    with TraceGrade("secret", transport=httpx.MockTransport(failure)) as client:
+    with make_client("secret", transport=httpx.MockTransport(failure)) as client:
         with client.trace("review"):
             pass
         assert client.delivery_errors[0].code == "transport_error"
@@ -239,7 +243,7 @@ def test_strict_delivery_preserves_application_exceptions(recorder, application_
     expected = (
         pytest.raises(RuntimeError) if application_failure else pytest.raises(TraceGradeError)
     )
-    with TraceGrade(
+    with make_client(
         "secret", transport=httpx.MockTransport(failure), raise_on_error=True
     ) as client:
         with expected as caught:
@@ -304,7 +308,7 @@ def test_invalid_payloads_are_rejected(client, value):
 
 
 def test_error_history_is_bounded():
-    with TraceGrade(
+    with make_client(
         "secret", transport=httpx.MockTransport(lambda _: httpx.Response(503))
     ) as client:
         for _ in range(105):

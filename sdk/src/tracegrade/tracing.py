@@ -118,7 +118,9 @@ class Trace:
         self._status = "error" if exc is not None else "ok"
         self._active = False
         if self._id is not None:
-            self._client._send("traces", self._payload(), preserve_exception=exc is not None)
+            self._client._finish_trace(
+                self._id, self._payload(), preserve_exception=exc is not None
+            )
         return False
 
 
@@ -257,8 +259,9 @@ class Span(Trace):
             except Exception:
                 self._error_message = type(exc).__name__
         if self._id is not None:
-            self._client._send(
-                f"traces/{self._trace.id}/spans",
+            self._client._complete_span(
+                self._trace.id,
+                self._id,
                 self._payload(),
                 preserve_exception=exc is not None,
             )
