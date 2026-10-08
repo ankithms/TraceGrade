@@ -9,6 +9,8 @@ from app.api.dependencies import DbSession, get_current_project
 from app.api.errors import ApiError
 from app.models import Project, Span, Trace
 from app.schemas.trace import (
+    SpanBatchIngest,
+    SpanBatchResponse,
     SpanIngest,
     SpanResponse,
     TraceDetailResponse,
@@ -16,7 +18,7 @@ from app.schemas.trace import (
     TraceListResponse,
     TraceResponse,
 )
-from app.services.ingestion import ingest_span, ingest_trace
+from app.services.ingestion import ingest_span, ingest_span_batch, ingest_trace
 
 router = APIRouter(prefix="/traces", tags=["traces"])
 CurrentProject = Annotated[Project, Depends(get_current_project)]
@@ -109,3 +111,19 @@ async def get_trace(
         **TraceResponse.model_validate(trace).model_dump(),
         spans=[SpanResponse.model_validate(span) for span in spans],
     )
+
+
+@router.post("/{trace_id}/spans/batch", response_model=SpanBatchResponse, tags=["spans"])
+async def create_or_update_span_batch(
+    trace_id: UUID, payload: SpanBatchIngest, session: DbSession, project: CurrentProject
+) -> SpanBatchResponse:
+    try:
+        result = await ingest_span_batch(session, project.id, trace_id, payload)
+        await session.commit()
+    except IntegrityError as error:
+        await session.rollback()
+        raise ApiError(409, "ingestion_conflict", "Batch conflicts with existing data") from error
+    except ApiError:
+        await session.rollback()
+        raise
+    return result

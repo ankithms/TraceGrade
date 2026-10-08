@@ -162,3 +162,103 @@ async def test_trace_browsing_round_trip(postgres_client):
     assert detail.json()["project_id"] == str(project_id)
     assert detail.json()["spans"][0]["started_at"] == "2026-10-08T10:00:01Z"
     assert detail.json()["spans"][0]["estimated_cost_usd"] == "0.0000012345"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_batch_retries(postgres_client):
+    client, headers, factory, project_id = postgres_client
+    trace = await client.post("/api/v1/traces", json=TRACE, headers=headers)
+    assert trace.status_code == 201
+    path = f"/api/v1/traces/{trace.json()['id']}/spans/batch"
+    snapshots = [{**SPAN, "external_id": f"batch-{index}"} for index in range(5)]
+    responses = await asyncio.gather(
+        *[client.post(path, json={"spans": snapshots}, headers=headers) for _ in range(10)]
+    )
+    assert all(response.status_code == 200 for response in responses)
+    assert all(response.json()["errors"] == [] for response in responses)
+    accepted = [item for response in responses for item in response.json()["accepted"]]
+    assert len({item["id"] for item in accepted}) == 5
+    assert sum(item["created"] for item in accepted) == 5
+    async with factory() as session:
+        assert (
+            await session.scalar(
+                select(func.count()).select_from(Span).where(Span.project_id == project_id)
+            )
+            == 5
+        )
+
+
+@pytest.mark.asyncio
+async def test_batch_savepoints_recover_from_database_errors(postgres_client, monkeypatch):
+    from app.services import ingestion
+
+    client, headers, factory, project_id = postgres_client
+    trace = await client.post("/api/v1/traces", json=TRACE, headers=headers)
+    assert trace.status_code == 201
+    original = ingestion.ingest_span
+
+    async def inject_constraint_failure(session, project_id, trace_id, payload):
+        if payload.external_id == "db-invalid":
+            session.add(
+                Span(
+                    id=uuid4(),
+                    project_id=project_id,
+                    trace_id=trace_id,
+                    **{**payload.model_dump(), "prompt_tokens": -1},
+                )
+            )
+            await session.flush()
+        return await original(session, project_id, trace_id, payload)
+
+    monkeypatch.setattr(ingestion, "ingest_span", inject_constraint_failure)
+    snapshots = [
+        SPAN,
+        {**SPAN, "external_id": "db-invalid"},
+        {**SPAN, "external_id": "bad-input", "prompt_tokens": -1},
+        {**SPAN, "external_id": "last"},
+    ]
+    response = await client.post(
+        f"/api/v1/traces/{trace.json()['id']}/spans/batch",
+        json={"spans": snapshots},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert [item["index"] for item in response.json()["accepted"]] == [0, 3]
+    assert [(error["index"], error["code"]) for error in response.json()["errors"]] == [
+        (1, "ingestion_conflict"),
+        (2, "validation_error"),
+    ]
+    async with factory() as session:
+        assert set(
+            await session.scalars(select(Span.external_id).where(Span.project_id == project_id))
+        ) == {SPAN["external_id"], "last"}
+
+
+@pytest.mark.asyncio
+async def test_fatal_batch_failure_rolls_back_accepted_items(postgres_client, monkeypatch):
+    from app.services import ingestion
+
+    client, headers, factory, project_id = postgres_client
+    trace = await client.post("/api/v1/traces", json=TRACE, headers=headers)
+    assert trace.status_code == 201
+    original = ingestion.ingest_span
+
+    async def fail_second_item(session, project_id, trace_id, payload):
+        if payload.external_id == "fatal":
+            raise RuntimeError("Simulated fatal failure")
+        return await original(session, project_id, trace_id, payload)
+
+    monkeypatch.setattr(ingestion, "ingest_span", fail_second_item)
+    with pytest.raises(RuntimeError, match="Simulated fatal failure"):
+        await client.post(
+            f"/api/v1/traces/{trace.json()['id']}/spans/batch",
+            json={"spans": [SPAN, {**SPAN, "external_id": "fatal"}]},
+            headers=headers,
+        )
+    async with factory() as session:
+        assert (
+            await session.scalar(
+                select(func.count()).select_from(Span).where(Span.project_id == project_id)
+            )
+            == 0
+        )

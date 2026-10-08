@@ -4,7 +4,7 @@ TraceGrade is an AI Evaluation & Reliability Platform for tracing LLM applicatio
 
 The v1 feature contract is frozen in [`SCOPE.md`](SCOPE.md). Rejected ideas are recorded in [`BACKLOG.md`](BACKLOG.md).
 
-Current implementation status: Phases 0–2 are complete. Phase 3 has trace/span persistence, single-resource ingestion, and trace browsing; batch ingestion and the Python SDK are next.
+Current implementation status: Phases 0–2 are complete. Phase 3 has trace/span persistence, single-resource and batch ingestion, and trace browsing; the Python SDK is next.
 
 ## Repository
 

@@ -122,3 +122,32 @@ class TraceListResponse(BaseModel):
 
 class TraceDetailResponse(TraceResponse):
     spans: list[SpanResponse]
+
+
+class SpanBatchIngest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    spans: list[JsonValue] = Field(
+        min_length=1,
+        max_length=100,
+        description="Span snapshots; invalid items are reported individually.",
+    )
+
+
+class SpanBatchAccepted(BaseModel):
+    index: int
+    id: UUID
+    external_id: str
+    created: bool
+
+
+class SpanBatchError(BaseModel):
+    index: int
+    status_code: int
+    code: str
+    message: str
+
+
+class SpanBatchResponse(BaseModel):
+    accepted: list[SpanBatchAccepted]
+    errors: list[SpanBatchError]
