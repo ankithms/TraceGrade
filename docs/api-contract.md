@@ -67,8 +67,23 @@ Collection endpoints accept `limit` (default 50, maximum 100) and `offset` (defa
 
 Payloads expose the trace/span fields in `docs/db-schema.md`. Batch requests contain at most 100 spans and return accepted IDs plus item-level validation errors.
 
-Single-resource ingestion is implemented. List/detail and batch endpoints are
-planned for subsequent branches.
+Single-resource ingestion and trace list/detail endpoints are implemented.
+Batch ingestion is planned for the next branch.
+
+Trace browsing uses the same project Bearer API key:
+
+- `GET /traces?limit=50&offset=0` returns `{ "items": [...], "total": N }`.
+  Only the authenticated project's traces contribute to items and total. Traces
+  are ordered by ingestion time descending, then UUID descending to break ties.
+  List items include trace metadata, without span payloads.
+- `GET /traces/{trace_id}` returns the trace fields plus a `spans` array, ordered
+  by start time ascending, then UUID ascending. The array is flat; each span's
+  `parent_span_id` identifies its parent so clients can reconstruct the hierarchy.
+  All input/output, model, metric, status, error, and attribute fields are retained.
+- Unknown and cross-project trace IDs both return `404 trace_not_found`. An empty
+  project returns an empty list with total zero; a trace without spans returns
+  `"spans": []`.
+
 
 - Send a project API key as `Authorization: Bearer <key>`. The server sets project
   and resource UUIDs; `project_id`, `id`, and unknown request fields are rejected.
