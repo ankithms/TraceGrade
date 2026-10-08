@@ -41,7 +41,7 @@ Acceptance: a project can be created and a project-scoped API key authenticates 
 - [x] Implement trace list/detail APIs.
 - [x] Implement SDK client and trace/span context managers.
 - [x] Add SDK batching, flush, and bounded delivery retry.
-- [ ] Add a runnable tracing example and finish the Phase 3 acceptance walkthrough.
+- [x] Add a runnable tracing example and finish the [Phase 3 acceptance walkthrough](tracing-walkthrough.md).
 - [x] Capture input/output, model, tokens, latency, status, and errors.
 
 Acceptance: a sample Python call creates one visible trace with nested LLM metadata and duplicate delivery does not duplicate data.

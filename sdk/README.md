@@ -18,6 +18,10 @@ projects and should not be used for instrumentation.
 
 ## Instrument a call
 
+For a runnable example with persisted metadata checks and duplicate-delivery
+verification, follow the [tracing walkthrough](../docs/tracing-walkthrough.md)
+and run `python sdk/examples/trace_review.py` from the repository root.
+
 ```python
 import os
 from decimal import Decimal
@@ -134,7 +138,7 @@ cd sdk
 python -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
-ruff check src tests
+ruff check src tests examples
 pytest
 ```
 
