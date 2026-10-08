@@ -17,4 +17,4 @@ test-sdk:
 
 check:
 	cd backend && ruff check app tests && pytest
-	cd sdk && ruff check src tests && pytest
+	cd sdk && ruff check src tests examples && pytest
