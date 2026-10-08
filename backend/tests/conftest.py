@@ -19,8 +19,15 @@ async def test_session_factory() -> AsyncIterator[async_sessionmaker[AsyncSessio
     )
 
     @event.listens_for(engine.sync_engine, "connect")
-    def enable_foreign_keys(connection, _record):
+    def configure_sqlite(connection, _record):
+        # SQLite's legacy driver mode does not begin a transaction for SELECT
+        # or SAVEPOINT. Explicit BEGIN gives batch savepoints an outer transaction.
+        connection.isolation_level = None
         connection.execute("PRAGMA foreign_keys=ON")
+
+    @event.listens_for(engine.sync_engine, "begin")
+    def begin_transaction(connection):
+        connection.exec_driver_sql("BEGIN")
 
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)

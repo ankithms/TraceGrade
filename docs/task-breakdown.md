@@ -37,7 +37,7 @@ Acceptance: a project can be created and a project-scoped API key authenticates 
 
 - [x] Add trace/span models and migrations with project ownership constraints.
 - [x] Implement idempotent single-trace and single-span ingestion.
-- [ ] Add span batch ingestion with item-level errors.
+- [x] Add span batch ingestion with item-level errors.
 - [x] Implement trace list/detail APIs.
 - [ ] Implement SDK trace/span context managers, batching, and bounded retry.
 - [ ] Capture input/output, model, tokens, latency, status, and errors.

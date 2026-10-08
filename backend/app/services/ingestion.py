@@ -1,14 +1,24 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import ApiError
 from app.models import ExecutionStatus, Span, Trace
-from app.schemas.trace import SpanIngest, TraceIngest, utc_datetime
+from app.schemas.trace import (
+    SpanBatchAccepted,
+    SpanBatchError,
+    SpanBatchIngest,
+    SpanBatchResponse,
+    SpanIngest,
+    TraceIngest,
+    utc_datetime,
+)
 
 
 def comparable(value):
@@ -94,3 +104,59 @@ async def ingest_span(
         {"project_id": project_id, "trace_id": trace_id, **payload.model_dump()},
         ("trace_id", "parent_span_id", "kind", "name", "started_at"),
     )
+
+
+async def ingest_span_batch(
+    session: AsyncSession, project_id: UUID, trace_id: UUID, payload: SpanBatchIngest
+) -> SpanBatchResponse:
+    # Hold the trace lock for the whole transaction, including item savepoints.
+    # A project deletion cannot remove accepted spans before the batch commits.
+    trace = await session.scalar(
+        select(Trace.id)
+        .where(Trace.id == trace_id, Trace.project_id == project_id)
+        .with_for_update()
+    )
+    if trace is None:
+        raise ApiError(404, "trace_not_found", "Trace not found")
+
+    result = SpanBatchResponse(accepted=[], errors=[])
+    for index, snapshot in enumerate(payload.spans):
+        try:
+            span_payload = SpanIngest.model_validate(snapshot)
+        except ValidationError:
+            result.errors.append(
+                SpanBatchError(
+                    index=index,
+                    status_code=422,
+                    code="validation_error",
+                    message="Span validation failed",
+                )
+            )
+            continue
+        try:
+            async with session.begin_nested():
+                span, created = await ingest_span(session, project_id, trace_id, span_payload)
+                accepted = SpanBatchAccepted(
+                    index=index, id=span.id, external_id=span.external_id, created=created
+                )
+            result.accepted.append(accepted)
+        except ApiError as error:
+            result.errors.append(
+                SpanBatchError(
+                    index=index,
+                    status_code=error.status_code,
+                    code=error.code,
+                    message=error.message,
+                )
+            )
+        except IntegrityError:
+            # Only this savepoint is rolled back. Other valid items can commit.
+            result.errors.append(
+                SpanBatchError(
+                    index=index,
+                    status_code=409,
+                    code="ingestion_conflict",
+                    message="Span conflicts with existing data",
+                )
+            )
+    return result

@@ -14,7 +14,7 @@ Project API keys are returned once at creation. All project-scoped resource IDs 
 
 ## Response Conventions
 
-- Create: `201 Created`, except experiment start which returns `202 Accepted`.
+- Create: `201 Created`, except experiment start which returns `202 Accepted` and span batches which return `200 OK` with per-item results.
 - Read/update: `200 OK`.
 - Delete/revoke: `204 No Content`.
 - Validation: `422 Unprocessable Entity`.
@@ -67,8 +67,7 @@ Collection endpoints accept `limit` (default 50, maximum 100) and `offset` (defa
 
 Payloads expose the trace/span fields in `docs/db-schema.md`. Batch requests contain at most 100 spans and return accepted IDs plus item-level validation errors.
 
-Single-resource ingestion and trace list/detail endpoints are implemented.
-Batch ingestion is planned for the next branch.
+Single-resource ingestion, span batch ingestion, and trace list/detail endpoints are implemented.
 
 Trace browsing uses the same project Bearer API key:
 
@@ -137,6 +136,65 @@ Use the returned trace `id` with `POST /traces/{trace_id}/spans`:
   "latency_ms": 1000
 }
 ```
+
+### Span batch ingestion
+
+`POST /traces/{trace_id}/spans/batch` accepts a JSON envelope containing 1–100
+span snapshots. Authentication and each span's validation, ownership, identity,
+and completion rules are the same as single-span ingestion.
+
+```json
+{
+  "spans": [
+    {
+      "external_id": "review-123-model",
+      "name": "Model call",
+      "kind": "llm",
+      "status": "running",
+      "started_at": "2026-10-08T10:00:01Z"
+    },
+    { "name": "Missing required fields" }
+  ]
+}
+```
+
+A processed batch returns `200 OK`, including when some or all items fail:
+
+```json
+{
+  "accepted": [
+    {
+      "index": 0,
+      "id": "00000000-0000-0000-0000-000000000001",
+      "external_id": "review-123-model",
+      "created": true
+    }
+  ],
+  "errors": [
+    {
+      "index": 1,
+      "status_code": 422,
+      "code": "validation_error",
+      "message": "Span validation failed"
+    }
+  ]
+}
+```
+
+- Indices are zero-based positions in the request. Accepted and error arrays each
+  retain request order, and each input item has exactly one result.
+- Invalid snapshots return item-level `422` errors, inaccessible parents return
+  item-level `404` errors, and identity/final-data conflicts return item-level
+  `409` errors. Error messages do not echo model payloads.
+- Valid items commit together after processing; a failed item rolls back its own
+  savepoint. A fatal processing/commit failure rejects the whole request and rolls
+  back its writes, so the client can retry safely.
+- Whole-batch retries and repeated external IDs within a batch keep the same
+  resource IDs; replays report `created: false`. Items are processed in order.
+- Parents must already exist and use their server UUID. Ingest parent spans
+  first, then send children using the returned parent IDs.
+- A missing/cross-project trace returns request-level `404`, invalid credentials
+  return `401`, and a malformed envelope or invalid batch size returns `422`.
 
 ## Datasets and Test Cases
 
