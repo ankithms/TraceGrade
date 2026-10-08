@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_v1_prefix: str = "/api/v1"
     admin_key: str = Field(default="change-me", min_length=8)
+    api_key_hash_secret: str = Field(
+        default="development-only-api-key-hash-secret",
+        min_length=32,
+    )
     database_url: str = "postgresql+asyncpg://tracegrade:tracegrade@localhost:5432/tracegrade"
     temporal_address: str = "localhost:7233"
     temporal_namespace: str = "default"

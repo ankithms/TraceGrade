@@ -42,7 +42,7 @@ services:
       - temporal
     environment:
       TEMPORAL_ADDRESS: temporal:7233
-      TEMPORAL_CORS_ORIGINS: http://localhost:3000
+      TEMPORAL_CORS_ORIGINS: ${TRACEGRADE_CORS_ORIGINS:-http://localhost:3000}
     ports:
       - "${TEMPORAL_UI_PORT:-8080}:8080"
     restart: unless-stopped
@@ -56,6 +56,7 @@ services:
     environment:
       TRACEGRADE_ENVIRONMENT: ${TRACEGRADE_ENVIRONMENT:-development}
       TRACEGRADE_ADMIN_KEY: ${TRACEGRADE_ADMIN_KEY:-change-me-before-public-deployment}
+      TRACEGRADE_API_KEY_HASH_SECRET: ${TRACEGRADE_API_KEY_HASH_SECRET:-development-only-api-key-hash-secret}
       TRACEGRADE_DATABASE_URL: ${TRACEGRADE_DATABASE_URL:-postgresql+asyncpg://tracegrade:tracegrade@postgres:5432/tracegrade}
       TRACEGRADE_TEMPORAL_ADDRESS: ${TRACEGRADE_TEMPORAL_ADDRESS:-temporal:7233}
       TRACEGRADE_TEMPORAL_NAMESPACE: ${TRACEGRADE_TEMPORAL_NAMESPACE:-default}

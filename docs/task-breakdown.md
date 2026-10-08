@@ -26,10 +26,10 @@ Acceptance: the infrastructure stack starts, the API reports liveness/readiness,
 
 ## Phase 2 — Projects and API Keys
 
-- [ ] Add Alembic and project/API-key migrations.
-- [ ] Implement admin-key protection.
-- [ ] Implement project CRUD and API-key create/list/revoke.
-- [ ] Hash secrets, reveal plaintext once, and test project isolation.
+- [x] Add Alembic and project/API-key migrations.
+- [x] Implement admin-key protection.
+- [x] Implement project CRUD and API-key create/list/revoke.
+- [x] Hash secrets, reveal plaintext once, and test project isolation.
 
 Acceptance: a project can be created and a project-scoped API key authenticates requests.
 
