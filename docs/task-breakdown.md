@@ -39,8 +39,9 @@ Acceptance: a project can be created and a project-scoped API key authenticates 
 - [x] Implement idempotent single-trace and single-span ingestion.
 - [x] Add span batch ingestion with item-level errors.
 - [x] Implement trace list/detail APIs.
-- [ ] Implement SDK trace/span context managers, batching, and bounded retry.
-- [ ] Capture input/output, model, tokens, latency, status, and errors.
+- [x] Implement SDK client and trace/span context managers.
+- [ ] Add SDK batching, flush, and bounded delivery retry.
+- [x] Capture input/output, model, tokens, latency, status, and errors.
 
 Acceptance: a sample Python call creates one visible trace with nested LLM metadata and duplicate delivery does not duplicate data.
 

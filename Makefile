@@ -1,4 +1,4 @@
-.PHONY: up down logs test-backend check
+.PHONY: up down logs test-backend test-sdk check
 
 up:
 	docker compose up --build
@@ -12,5 +12,9 @@ logs:
 test-backend:
 	cd backend && pytest
 
+test-sdk:
+	cd sdk && pytest
+
 check:
 	cd backend && ruff check app tests && pytest
+	cd sdk && ruff check src tests && pytest

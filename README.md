@@ -4,13 +4,13 @@ TraceGrade is an AI Evaluation & Reliability Platform for tracing LLM applicatio
 
 The v1 feature contract is frozen in [`SCOPE.md`](SCOPE.md). Rejected ideas are recorded in [`BACKLOG.md`](BACKLOG.md).
 
-Current implementation status: Phases 0–2 are complete. Phase 3 has trace/span persistence, single-resource and batch ingestion, and trace browsing; the Python SDK is next.
+Current implementation status: Phases 0–2 are complete. Phase 3 has trace/span persistence, ingestion, browsing, and the Python instrumentation SDK; SDK batching/retries and a runnable tracing example are next.
 
 ## Repository
 
 - `backend`: FastAPI API.
 - `worker`: Temporal worker.
-- `sdk`: Python SDK.
+- `sdk`: [Python tracing SDK](sdk/README.md).
 - `frontend`: React dashboard.
 - `docs`: architecture, data, API, and delivery contracts.
 - `infra`: local service initialization.
