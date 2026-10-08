@@ -51,3 +51,25 @@ pytest
 - [`docs/db-schema.md`](docs/db-schema.md)
 - [`docs/api-contract.md`](docs/api-contract.md)
 - [`docs/task-breakdown.md`](docs/task-breakdown.md)
+
+## Pull Request Reviews
+
+Pull requests in this repository can be reviewed by the separate
+[AI Code Review Assistant](https://github.com/ankithms/ai-code-review-assistant).
+This integration uses GitHub webhooks and the reviewer's credentials.
+
+For the local reviewer stack at `http://localhost:3000`:
+
+1. Keep its Docker Compose stack running, including the backend and worker.
+2. Run `ngrok http 3000` to expose the reviewer to GitHub.
+3. In this repository's **Settings > Webhooks**, configure the HTTPS tunnel URL
+   followed by `/api/webhooks/github`, select JSON and pull request events, and
+   use the reviewer's `GITHUB_WEBHOOK_SECRET` as the webhook secret.
+4. Ensure the reviewer's `GITHUB_ACCESS_TOKEN` can read repository contents and
+   write pull-request reviews, and that its `GOOGLE_API_KEY` is configured.
+5. Open, reopen, or push commits to a pull request. Check GitHub webhook delivery
+   and the reviewer's dashboard and worker logs for the resulting review.
+
+Local delivery requires the reviewer and tunnel to stay running. If the tunnel
+URL changes, update the webhook payload URL. A continuously available deployment
+can replace the tunnel for reviews when the local machine is offline.
