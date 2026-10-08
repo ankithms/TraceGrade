@@ -67,6 +67,62 @@ Collection endpoints accept `limit` (default 50, maximum 100) and `offset` (defa
 
 Payloads expose the trace/span fields in `docs/db-schema.md`. Batch requests contain at most 100 spans and return accepted IDs plus item-level validation errors.
 
+Single-resource ingestion is implemented. List/detail and batch endpoints are
+planned for subsequent branches.
+
+- Send a project API key as `Authorization: Bearer <key>`. The server sets project
+  and resource UUIDs; `project_id`, `id`, and unknown request fields are rejected.
+- First delivery returns `201`; repeated delivery or an update returns `200`
+  with the same resource UUID. External IDs are unique within a project.
+- Requests are full snapshots. `name` and `started_at` identify the operation and
+  cannot change when reusing an external ID. A span also retains its trace, kind,
+  and parent. Identity changes return `409 idempotency_conflict`.
+- Running records can be updated and completed with `ok` or `error`. Completed
+  records accept identical replays; different final data returns `409`. A late
+  running snapshot returns the completed record without changing it.
+- Create a parent span before its children. A parent must belong to the same trace
+  and project; missing or inaccessible traces/parents return `404`. Immutable
+  parent links prevent callers from creating ancestry cycles.
+- Timestamps require a timezone and are normalized to UTC. If supplied, `ended_at`
+  cannot precede `started_at`.
+- Serialized UTF-8 JSON is limited to 16 KiB for attributes and 64 KiB each for
+  span input/output. Non-finite JSON numbers are rejected. Error messages are
+  limited to 4,096 characters. Token counts and latency are non-negative 32-bit
+  integers; cost is non-negative with at most 10 decimal places and 10 integer
+  digits.
+
+Example trace request:
+
+```json
+{
+  "external_id": "review-123",
+  "name": "AI Code Reviewer",
+  "status": "running",
+  "started_at": "2026-10-08T10:00:00Z",
+  "attributes": { "pull_request": 123 }
+}
+```
+
+Use the returned trace `id` with `POST /traces/{trace_id}/spans`:
+
+```json
+{
+  "external_id": "review-123-model",
+  "name": "Model call",
+  "kind": "llm",
+  "status": "ok",
+  "started_at": "2026-10-08T10:00:01Z",
+  "ended_at": "2026-10-08T10:00:02Z",
+  "input": { "prompt": "Review this diff" },
+  "output": { "summary": "Review complete" },
+  "model": "example-model",
+  "prompt_tokens": 20,
+  "completion_tokens": 10,
+  "total_tokens": 30,
+  "latency_ms": 1000
+}
+```
+
 ## Datasets and Test Cases
 
 | Method | Path | Purpose |
