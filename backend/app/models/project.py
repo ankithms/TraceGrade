@@ -7,6 +7,7 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.models.api_key import ApiKey
+    from app.models.trace import Trace
 
 
 class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -16,6 +17,12 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     slug: Mapped[str] = mapped_column(String(63), nullable=False, unique=True, index=True)
 
     api_keys: Mapped[list["ApiKey"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    traces: Mapped[list["Trace"]] = relationship(
         back_populates="project",
         cascade="all, delete-orphan",
         passive_deletes=True,

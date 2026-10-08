@@ -35,7 +35,8 @@ Acceptance: a project can be created and a project-scoped API key authenticates 
 
 ## Phase 3 — Tracing and Python SDK
 
-- [ ] Add trace/span migrations and idempotent ingestion.
+- [x] Add trace/span models and migrations with project ownership constraints.
+- [ ] Implement idempotent trace/span ingestion.
 - [ ] Implement trace list/detail APIs.
 - [ ] Implement SDK trace/span context managers, batching, and bounded retry.
 - [ ] Capture input/output, model, tokens, latency, status, and errors.
