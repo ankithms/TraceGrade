@@ -62,3 +62,72 @@ def test_sdk_round_trip_against_api():
         finally:
             deleted = api.delete(f"projects/{project_id}", headers=admin_headers)
             assert deleted.status_code == 204
+
+
+class LostAcknowledgementTransport(httpx.BaseTransport):
+    def __init__(self):
+        self.inner = httpx.HTTPTransport()
+        self.lost_start = False
+        self.lost_batch = False
+
+    def handle_request(self, request):
+        response = self.inner.handle_request(request)
+        lose_start = request.url.path.endswith("/traces") and not self.lost_start
+        lose_batch = request.url.path.endswith("/batch") and not self.lost_batch
+        if lose_start or lose_batch:
+            # Consume the committed response, then simulate loss before SDK acknowledgement.
+            response.read()
+            response.close()
+            self.lost_start |= lose_start
+            self.lost_batch |= lose_batch
+            raise httpx.ReadTimeout("Simulated lost acknowledgement", request=request)
+        return response
+
+    def close(self):
+        self.inner.close()
+
+
+def test_sdk_retries_committed_requests_without_duplicates():
+    api_url = os.getenv("TRACEGRADE_TEST_API_URL")
+    admin_key = os.getenv("TRACEGRADE_TEST_ADMIN_KEY")
+    if not api_url or not admin_key:
+        pytest.skip("Set TRACEGRADE_TEST_API_URL and TRACEGRADE_TEST_ADMIN_KEY")
+    with httpx.Client(base_url=api_url.rstrip("/") + "/", trust_env=False, timeout=5) as api:
+        admin_headers = {"X-TraceGrade-Admin-Key": admin_key}
+        created = api.post(
+            "projects", json={"name": f"SDK retry test {uuid4()}"}, headers=admin_headers
+        )
+        assert created.status_code == 201
+        project_id = created.json()["id"]
+        try:
+            key = api.post(
+                f"projects/{project_id}/api-keys", json={"name": "SDK test"}, headers=admin_headers
+            )
+            assert key.status_code == 201
+            project_key = key.json()["key"]
+            transport = LostAcknowledgementTransport()
+            with TraceGrade(
+                project_key,
+                base_url=api_url,
+                transport=transport,
+                retry_backoff=0,
+                raise_on_error=True,
+            ) as client:
+                with client.trace("review") as trace:
+                    with trace.span("model", kind="llm") as span:
+                        span.set_output({"summary": "complete"})
+                assert client.delivery_errors == ()
+                assert client.pending_spans == 0
+            assert transport.lost_start and transport.lost_batch
+            headers = {"Authorization": f"Bearer {project_key}"}
+            listing = api.get("traces", headers=headers)
+            assert listing.status_code == 200
+            assert listing.json()["total"] == 1
+            detail = api.get(f"traces/{trace.id}", headers=headers)
+            assert detail.status_code == 200
+            assert len(detail.json()["spans"]) == 1
+            assert detail.json()["spans"][0]["id"] == span.id
+            assert detail.json()["spans"][0]["output"] == {"summary": "complete"}
+        finally:
+            deleted = api.delete(f"projects/{project_id}", headers=admin_headers)
+            assert deleted.status_code == 204
