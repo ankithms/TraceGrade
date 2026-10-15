@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 
-from tracegrade_evaluators import EvaluationError, evaluate, gemini
+from tracegrade_evaluators import EvaluationError, EvaluationResult, evaluate, gemini
 
 JUDGE = {"model": "gemini-test", "rubric": "Check correctness", "pass_threshold": 0.75}
 
@@ -117,6 +117,33 @@ async def test_gemini_request_and_threshold(score, passed):
         assert not client.is_closed
     assert len(requests) == 1
     assert result.score == score and result.passed is passed and result.rationale == "Reason"
+
+
+async def test_gemini_judges_without_reference_output():
+    def handler(request):
+        body = json.loads(request.content)
+        fixture = json.loads(body["contents"][0]["parts"][0]["text"])
+        assert fixture == {
+            "input": {"diff": "+query(user_input)"},
+            "output": "Possible SQL injection; use a parameterized query.",
+        }
+        instruction = body["systemInstruction"]["parts"][0]["text"]
+        assert "Rubric:\nCheck correctness" in instruction
+        assert "Use expected_output as reference data" not in instruction
+        return httpx.Response(
+            200, json=candidate('{"score":0.9,"rationale":"Found the real issue"}')
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await evaluate(
+            "gemini_judge",
+            JUDGE,
+            input={"diff": "+query(user_input)"},
+            output="Possible SQL injection; use a parameterized query.",
+            gemini_api_key="test-secret",
+            client=client,
+        )
+    assert result == EvaluationResult(0.9, True, "Found the real issue")
 
 
 @pytest.mark.parametrize(

@@ -261,6 +261,9 @@ return `409 evaluator_conflict`. Lists use the same stable ordering as datasets.
 Fixed-output scoring is available through the Python library in the
 [evaluation walkthrough](evaluation-walkthrough.md). There is no synchronous
 HTTP execution route; experiment execution and score persistence are Phase 5.
+Test-case `expected_output` is optional for `gemini_judge`, which can score the
+input and candidate output against its reusable rubric. Text and JSON matching
+evaluators use `expected_output` as their comparison reference.
 
 ## Experiments and Results
 

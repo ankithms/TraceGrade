@@ -56,7 +56,6 @@ async def main(model: str | None) -> int:
                 },
                 "input": {"diff": "+db.execute('SELECT * FROM users WHERE name=' + user_input)"},
                 "output": "SQL injection risk: use a parameterized query instead of concatenation.",
-                "expected_output": "Identify SQL injection and recommend parameterized queries.",
             }
         )
     failed = False
@@ -67,7 +66,7 @@ async def main(model: str | None) -> int:
                 fixture["config"],
                 input=fixture["input"],
                 output=fixture["output"],
-                expected_output=fixture["expected_output"],
+                expected_output=fixture.get("expected_output"),
                 gemini_api_key=os.getenv("GEMINI_API_KEY"),
             )
             print(json.dumps({"name": fixture["name"], "status": "completed", **asdict(result)}))
