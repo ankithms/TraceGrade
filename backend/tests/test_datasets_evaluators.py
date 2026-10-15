@@ -301,3 +301,15 @@ async def test_saved_case_and_evaluator_produce_a_score(api_client):
         output='{"finding":"SQL injection","safe":false}',
     )
     assert result.score == 1.0 and result.passed
+
+
+async def test_case_can_be_created_without_expected_output(api_client):
+    _, headers = await project_key(api_client)
+    dataset = await create_dataset(api_client, headers)
+    created = await api_client.post(
+        f"/api/v1/datasets/{dataset['id']}/cases",
+        headers=headers,
+        json={"name": "Review", "input": {"diff": "+query(user_input)"}},
+    )
+    assert created.status_code == 201
+    assert created.json()["expected_output"] is None

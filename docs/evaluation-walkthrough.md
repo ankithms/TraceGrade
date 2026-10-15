@@ -50,6 +50,19 @@ Copy the evaluator's `id` into `EVALUATOR_ID`. Dataset and evaluator names must 
 unique within this project. Repeating these create requests returns `409`;
 use `GET /datasets` and `GET /evaluators` to find the existing resources.
 
+`expected_output` is optional when a Gemini judge grades against a reusable rubric.
+For example, this review case needs only the code or diff:
+
+```bash
+curl --fail-with-body "$TRACEGRADE_API_URL/datasets/$DATASET_ID/cases" \
+  -H "Authorization: Bearer $TRACEGRADE_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Rubric-only review","input":{"diff":"+query(user_input)"},"metadata":{"category":"security"}}'
+```
+
+Reference outputs remain required by `exact_match` and `contains`, and are the
+comparison target for `json_match`.
+
 ## Score the stored fixture
 
 Install the backend package locally with Python 3.12:
@@ -133,7 +146,7 @@ judge scores depend on the provider; automated tests use an injected HTTP mock.
 | `exact_match` | `case_sensitive` (default `true`), `strip_whitespace` (default `false`) | Compare two strings. Optional stripping affects leading/trailing whitespace; case-insensitive comparison uses Unicode case folding. |
 | `contains` | Same as exact match | Find the expected string inside the output; an empty normalized reference is invalid. |
 | `json_match` | `{}` | Compare full JSON values. Object key order does not matter; array order does. Booleans differ from numbers; `1` and `1.0` match. Strings are parsed as JSON documents, so a JSON string scalar must be quoted, e.g. `'"ok"'`. |
-| `gemini_judge` | Required `model` and `rubric`; `pass_threshold` defaults to `0.5` | Request a normalized score and rationale. The application computes `passed = score >= pass_threshold`. |
+| `gemini_judge` | Required `model` and `rubric`; `pass_threshold` defaults to `0.5` | Grade the input and candidate output against the reusable rubric. A reference output is optional. The application computes `passed = score >= pass_threshold`. |
 
 All deterministic scores are 0 or 1. Invalid candidate JSON produces a completed
 zero score; invalid reference JSON is an input error. Duplicate object keys and
