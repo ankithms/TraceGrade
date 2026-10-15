@@ -125,7 +125,7 @@ Trace/span schema implementation:
 | --- | --- | --- |
 | `id` | UUID | Primary key. |
 | `project_id` | UUID | FK to `projects`; indexed. |
-| `dataset_id` | UUID | FK to `datasets`. |
+| `dataset_id` | UUID | Historical source dataset identity; no live-source FK. |
 | `name` | TEXT | Experiment label. |
 | `version_label` | TEXT | Application/prompt version supplied by the caller. |
 | `status` | ENUM | `pending`, `running`, `completed`, `failed`, `cancelled`. |
@@ -140,7 +140,7 @@ Trace/span schema implementation:
 
 ### `experiment_evaluators`
 
-Junction table with (`experiment_id`, `evaluator_id`) as the primary key and an immutable `config_snapshot` JSONB column.
+Snapshot table with (`experiment_id`, `evaluator_id`) as the primary key. It carries `project_id` for a composite ownership FK to the experiment and `config_snapshot` JSONB containing schema version, name, type, and normalized settings. `evaluator_id` retains the historical source identity without a live-source FK.
 
 ### `experiment_results`
 
@@ -148,8 +148,8 @@ Junction table with (`experiment_id`, `evaluator_id`) as the primary key and an 
 | --- | --- | --- |
 | `id` | UUID | Primary key. |
 | `experiment_id` | UUID | FK to `experiments`; indexed. |
-| `test_case_id` | UUID | FK to `test_cases`. |
-| `status` | ENUM | `pending`, `running`, `completed`, `failed`. |
+| `test_case_id` | UUID | Historical source case identity; no live-source FK. |
+| `status` | ENUM | `pending`, `running`, `completed`, `failed`, `cancelled`. |
 | `output` | JSONB | Nullable application output. |
 | `model` | TEXT | Model used by the evaluated app. |
 | `prompt_tokens` | INTEGER | Nullable. |
@@ -170,7 +170,7 @@ Unique: (`experiment_id`, `test_case_id`).
 | --- | --- | --- |
 | `id` | UUID | Primary key. |
 | `experiment_result_id` | UUID | FK to `experiment_results`; indexed. |
-| `evaluator_id` | UUID | FK to `evaluators`. |
+| `evaluator_id` | UUID | References selected evaluator snapshot within the experiment. |
 | `status` | ENUM | `completed` or `failed`. |
 | `score` | NUMERIC | Nullable normalized score from 0 to 1. |
 | `passed` | BOOLEAN | Nullable evaluator verdict. |
@@ -218,9 +218,8 @@ Project deletion is an explicit destructive operation and cascades through proje
 1. Projects and API keys.
 2. Traces and spans.
 3. Datasets, test cases, and evaluators (`20261015_0003`).
-4. Experiments.
-5. Results and scores.
-6. Comparisons and regressions.
+4. Experiments, selected-evaluator snapshots, case results, and scores (`20261015_0004`).
+5. Comparisons and regressions.
 
 ## Phase 4 implementation
 
@@ -237,3 +236,32 @@ Experiment references, snapshots, and deletion restrictions are implemented
 with Phase 5; Phase 4 resources are editable and deletable before experiments
 exist. Evaluator type is immutable in the API, while config updates apply to
 future evaluations.
+
+
+## Phase 5 schema implementation
+
+Migration `20261015_0004` implements the experiment tables above with these
+additional fields and constraints:
+
+- `experiments`: `idempotency_key`, `request_hash`, `dataset_snapshot`,
+  `cancelled_cases`, `error_message`, and `cancel_requested_at`. Creation keys
+  are unique within a project and workflow IDs are globally unique. Total cases
+  must be positive; disjoint terminal counters are nonnegative and cannot sum
+  above the total. Index: (`project_id`, `created_at`).
+- `experiment_results`: `project_id`, `case_snapshot`, and `output_recorded_at`.
+  Composite foreign keys keep results in their experiment's project. The output
+  checkpoint distinguishes an unrecorded application call from saved JSON null.
+  Metrics and application-attempt counts must be nonnegative. Index:
+  (`experiment_id`, `status`).
+- `evaluation_scores`: `experiment_id` and evaluator `attempt_count` (at least
+  one). Composite foreign keys require a result and selected evaluator from the
+  same experiment. Completed scores require a 0–1 score and verdict without an
+  error; failed scores require an error and null score/verdict.
+
+Source dataset/case/evaluator UUIDs are historical identities. Required JSONB
+snapshots preserve inputs after live source deletion; the snapshot service in
+PR 2 must validate live ownership before copying and protect active sources.
+Deleting a source never cascades into experiment history. Project deletion
+cascades through experiment-owned records. Snapshot JSON shape/immutability and
+lifecycle transition rules are enforced by subsequent services, not this initial
+schema migration. See the [execution contract](experiment-execution-contract.md).
