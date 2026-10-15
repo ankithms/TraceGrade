@@ -15,6 +15,7 @@ from app.schemas.evaluator import (
     EvaluatorResponse,
     EvaluatorUpdate,
 )
+from app.services.source_locks import lock_source_project, require_evaluator_deletable
 from tracegrade_evaluators.config import validate_config
 
 router = APIRouter(prefix="/evaluators", tags=["evaluators"])
@@ -47,6 +48,7 @@ async def save_evaluator(evaluator: Evaluator, session: DbSession) -> Evaluator:
 
 @router.post("", response_model=EvaluatorResponse, status_code=201)
 async def create_evaluator(payload: EvaluatorCreate, project: CurrentProject, session: DbSession):
+    await lock_source_project(session, project.id)
     evaluator = Evaluator(project_id=project.id, **payload.model_dump())
     session.add(evaluator)
     return await save_evaluator(evaluator, session)
@@ -83,6 +85,7 @@ async def update_evaluator(
     project: CurrentProject,
     session: DbSession,
 ):
+    await lock_source_project(session, project.id)
     evaluator = await get_evaluator_or_404(evaluator_id, project, session)
     fields = payload.model_dump(exclude_unset=True)
     if "config" in fields:
@@ -97,7 +100,9 @@ async def update_evaluator(
 
 @router.delete("/{evaluator_id}", status_code=204)
 async def delete_evaluator(evaluator_id: UUID, project: CurrentProject, session: DbSession):
+    await lock_source_project(session, project.id)
     evaluator = await get_evaluator_or_404(evaluator_id, project, session)
+    await require_evaluator_deletable(session, project.id, evaluator_id)
     await session.delete(evaluator)
     await session.commit()
     return Response(status_code=204)

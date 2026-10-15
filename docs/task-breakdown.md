@@ -60,14 +60,14 @@ Implementation and runnable fixtures: [Phase 4 walkthrough](evaluation-walkthrou
 ## Phase 5 — Durable Experiments
 
 - [x] Add experiment/result migrations.
-- [ ] Implement experiment creation and immutable snapshots.
+- [x] Implement experiment snapshot creation and project-scoped idempotency (internal service; HTTP create/start follows in PR 5).
 - [ ] Implement Temporal workflow, activities, timeouts, and bounded concurrency.
 - [ ] Persist idempotent progress, attempts, failures, scores, and terminal state.
 - [ ] Implement cancellation and restart/retry tests.
 
 Acceptance: a multi-case experiment survives API/worker restarts and reaches a correct, queryable terminal state.
 
-PR sequence, schema boundaries, and execution semantics: [Phase 5 execution contract](experiment-execution-contract.md). The first PR adds schema and typed contracts; experiment creation and execution are not implemented yet.
+PR sequence, schema boundaries, and execution semantics: [Phase 5 execution contract](experiment-execution-contract.md). PRs 1–2 add schema, typed contracts, and internal atomic snapshot creation with idempotency. Public experiment creation/start and execution are still pending.
 
 ## Phase 6 — Results, Comparison, and Regression
 

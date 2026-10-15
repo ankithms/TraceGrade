@@ -222,7 +222,7 @@ null and `metadata` defaults to `{}`. Input/reference payloads are each limited 
 PATCH requires at least one field and preserves omitted fields. Explicit null
 clears a description, input, or expected output; name and metadata cannot be
 null. Metadata updates replace the whole object. Dataset deletion cascades to
-its cases. Running-experiment deletion guards arrive with experiments in Phase 5.
+its cases. Pending/running-experiment deletion guards are implemented: deleting an active dataset or any case within it returns `409 dataset_in_use`. Terminal runs retain their snapshots after source deletion.
 
 Lists use the common pagination envelope and order by creation time descending,
 then UUID descending. Nested case routes verify both dataset project ownership
@@ -276,6 +276,21 @@ evaluators use `expected_output` as their comparison reference.
 | `POST` | `/experiments/{experiment_id}/cancel` | Request cancellation of a non-terminal workflow. |
 
 `POST /experiments` requires `dataset_id`, `name`, `version_label`, application execution configuration, and one or more `evaluator_ids`. Repeating the same request with the same client `idempotency_key` returns the existing experiment.
+
+The schema and internal snapshot creation service are implemented through Phase 5
+PR 2; these lifecycle routes will be exposed in PR 5 alongside durable workflow
+startup. The service validates a nonempty dataset (up to 1,000 cases), 1–100
+unique owned evaluators, and a 1–255-character whitespace-free idempotency key.
+Equivalent evaluator ordering and explicit/default configuration values resolve
+to the same run; different request contents with the same project/key return
+`409 idempotency_conflict`. Source reads are skipped on matching replays, so later
+source edits/deletion cannot change the original snapshot. See the
+[execution contract](experiment-execution-contract.md) for transaction semantics.
+
+Deleting a dataset or a case in it returns `409 dataset_in_use` while a referencing
+experiment is pending/running. Deleting a selected evaluator returns
+`409 evaluator_in_use`. These guards are active on the existing dataset/evaluator
+routes now; terminal experiments do not block source deletion.
 
 ## Comparisons and Regressions
 

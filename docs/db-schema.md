@@ -259,9 +259,9 @@ additional fields and constraints:
   error; failed scores require an error and null score/verdict.
 
 Source dataset/case/evaluator UUIDs are historical identities. Required JSONB
-snapshots preserve inputs after live source deletion; the snapshot service in
-PR 2 must validate live ownership before copying and protect active sources.
+snapshots preserve inputs after live source deletion; the PR 2 snapshot service
+validates live ownership before copying and the source API protects active resources.
 Deleting a source never cascades into experiment history. Project deletion
-cascades through experiment-owned records. Snapshot JSON shape/immutability and
-lifecycle transition rules are enforced by subsequent services, not this initial
-schema migration. See the [execution contract](experiment-execution-contract.md).
+cascades through experiment-owned records. Snapshot JSON shape and service-level
+immutability are enforced by PR 2. Lifecycle transition rules arrive with the
+activity/workflow services. See the [execution contract](experiment-execution-contract.md).

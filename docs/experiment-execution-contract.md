@@ -1,9 +1,9 @@
 # Phase 5 experiment execution contract
 
-Status: schema and data contracts implemented in PR 1 of Phase 5. Snapshot
-creation, application execution, Temporal workflows, lifecycle APIs, and
-cancellation handling are subsequent PRs. No experiment execution endpoint is
-introduced by this schema slice.
+Status: schema/data contracts and the snapshot creation service are implemented
+through PR 2 of Phase 5. Application execution, Temporal workflows, lifecycle
+APIs, and cancellation handling are subsequent PRs. No experiment execution
+endpoint is introduced yet.
 
 Classification: **IN SCOPE**, implementing frozen items 6 (experiments),
 7 (Temporal execution), 10 (results), and 14 (failure handling).
@@ -37,10 +37,10 @@ each result stores a `case_snapshot`, and each selected evaluator stores a
 `config_snapshot`. This preserves history when source resources are deleted.
 These UUIDs identify historical sources; they do not grant access to live data.
 
-PR 2 must validate all live-source ownership and case membership before copying
-anything, using a consistent database snapshot and a single transaction. It must
-also enforce the existing active-experiment deletion restrictions, including
-case deletion within an active dataset. Direct SQL inserts are not a substitute
+The PR 2 snapshot service validates live-source ownership and case membership
+before copying anything in a single transaction coordinated with source writers.
+It also enforces active-experiment deletion restrictions, including case deletion
+within an active dataset. Direct SQL inserts are not a substitute
 for this service validation. Composite foreign keys enforce ownership within
 experiment-owned records, not the ownership of historical source UUID labels.
 
@@ -56,8 +56,10 @@ The typed contracts are in `backend/tracegrade_experiments/contracts.py` and
 reuse Phase 4 evaluator validation. They reject unknown fields, non-finite JSON,
 unsupported schema versions, and oversized/deep payloads. These checks run when
 constructing snapshots; JSONB columns do not enforce their entire JSON shape.
-PR 2 must prevent snapshot changes through the application service after creation.
-The schema alone does not make snapshots immutable against direct SQL updates.
+The snapshot service only creates frozen inputs; an idempotent replay never
+updates them. It returns an immutable creation result containing the experiment
+UUID and a created/replayed flag. The schema does not make snapshots immutable
+against direct SQL or arbitrary ORM updates.
 
 ## Application execution
 
@@ -187,3 +189,48 @@ isolated PostgreSQL database when `TRACEGRADE_TEST_DATABASE_URL` is set. They
 cover ownership constraints, uniqueness, invalid progress/metrics/status values,
 source-history retention, and project deletion cascades. Contract tests validate
 application payloads, snapshot settings, limits and stable per-case identifiers.
+
+
+## PR 2 snapshot service and transaction boundary
+
+`app.services.experiment_snapshots.create_experiment_snapshot(session, project_id,
+payload)` stages the pending run, one result per case, and selected evaluator
+snapshots. The caller owns the outer transaction and must commit before starting
+any workflow or returning success. A savepoint rolls back all snapshot inserts
+on validation/persistence failure, even if a caller catches an exception and
+later commits the surrounding transaction. Caller rollback removes the run.
+A session with pending unrelated inserts/updates/deletes is rejected rather than
+implicitly flushing those mutations. There are no outbound calls.
+
+`app.schemas.experiment.ExperimentCreate` validates the future creation input:
+`dataset_id`, `name`, `version_label`, `idempotency_key`, `evaluator_ids`, and
+`run_config`. The key is case-sensitive, 1–255 characters without whitespace.
+One to 100 unique evaluators and a nonempty dataset of at most 1,000 cases are
+supported per run. Unknown/cross-project sources return 404; empty, oversized,
+or invalid persisted sources return a controlled 422 without partial writes.
+Reference-free Gemini cases retain null expected outputs.
+
+The fingerprint includes normalized names, dataset/version, evaluator selection,
+and the full normalized run configuration. It excludes the lookup key. Object
+key order and evaluator selection order do not matter; omitted and explicit
+configuration defaults match. Parameter scalar types remain significant, so a
+JSON integer and float can produce different fingerprints. Lookup precedes live
+source reads: matching replays work after source edits/deletion; a different
+request with the same project/key returns `409 idempotency_conflict`.
+
+Snapshot creation and all dataset/case/evaluator mutation routes first acquire
+the same PostgreSQL project-row `FOR UPDATE` lock and retain it through commit.
+Under the default READ COMMITTED isolation, this keeps all source reads coherent
+and also serializes concurrent creation requests. Sources are explicitly refreshed
+to avoid copying a stale SQLAlchemy identity-map value. This deliberately
+serializes brief source mutations within one project in v1; separate projects
+and trace ingestion remain independent. SQLite tests cover behavior, while
+PostgreSQL tests verify actual row-lock races. Direct SQL writers must follow
+the same locking protocol; arbitrary out-of-band writes are not coordinated.
+
+Dataset deletion and all case deletions within that dataset return
+`409 dataset_in_use` while any referencing experiment is pending/running. Selected
+evaluator deletion similarly returns `409 evaluator_in_use`. Terminal experiments
+do not block source deletion, and unused resources remain deletable. Live source
+edits/additions are allowed and affect future runs only. Explicit admin project
+deletion retains its existing cascade policy.

@@ -19,6 +19,7 @@ from app.schemas.dataset import (
     TestCaseResponse,
     TestCaseUpdate,
 )
+from app.services.source_locks import lock_source_project, require_dataset_deletable
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 CurrentProject = Annotated[Project, Depends(get_current_project)]
@@ -62,6 +63,7 @@ async def save_dataset(dataset: Dataset, session: DbSession) -> Dataset:
 
 @router.post("", response_model=DatasetResponse, status_code=201)
 async def create_dataset(payload: DatasetCreate, project: CurrentProject, session: DbSession):
+    await lock_source_project(session, project.id)
     dataset = Dataset(project_id=project.id, **payload.model_dump())
     session.add(dataset)
     return await save_dataset(dataset, session)
@@ -98,6 +100,7 @@ async def update_dataset(
     project: CurrentProject,
     session: DbSession,
 ):
+    await lock_source_project(session, project.id)
     dataset = await get_dataset_or_404(dataset_id, project, session)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(dataset, field, value)
@@ -106,7 +109,9 @@ async def update_dataset(
 
 @router.delete("/{dataset_id}", status_code=204)
 async def delete_dataset(dataset_id: UUID, project: CurrentProject, session: DbSession):
+    await lock_source_project(session, project.id)
     dataset = await get_dataset_or_404(dataset_id, project, session)
+    await require_dataset_deletable(session, project.id, dataset_id)
     await session.delete(dataset)
     await session.commit()
     return Response(status_code=204)
@@ -119,6 +124,7 @@ async def create_case(
     project: CurrentProject,
     session: DbSession,
 ):
+    await lock_source_project(session, project.id)
     await get_dataset_or_404(dataset_id, project, session)
     fields = payload.model_dump()
     fields["case_metadata"] = fields.pop("metadata")
@@ -163,6 +169,7 @@ async def update_case(
     project: CurrentProject,
     session: DbSession,
 ):
+    await lock_source_project(session, project.id)
     case = await get_case_or_404(dataset_id, case_id, project, session)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(case, "case_metadata" if field == "metadata" else field, value)
@@ -173,7 +180,9 @@ async def update_case(
 
 @router.delete("/{dataset_id}/cases/{case_id}", status_code=204)
 async def delete_case(dataset_id: UUID, case_id: UUID, project: CurrentProject, session: DbSession):
+    await lock_source_project(session, project.id)
     case = await get_case_or_404(dataset_id, case_id, project, session)
+    await require_dataset_deletable(session, project.id, dataset_id)
     await session.delete(case)
     await session.commit()
     return Response(status_code=204)

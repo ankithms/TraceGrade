@@ -1,7 +1,7 @@
 """Experiment-owned records. Source UUIDs identify frozen inputs, not live rows.
 
-Live dataset/case/evaluator ownership is checked when taking the snapshot (the
-next delivery slice). Avoiding live-source FKs lets terminal runs retain their
+Live dataset/case/evaluator ownership is checked by the snapshot creation
+service. Avoiding live-source FKs lets terminal runs retain their
 history when source resources are subsequently deleted.
 """
 

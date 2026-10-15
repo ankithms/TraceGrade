@@ -2,7 +2,7 @@
 
 The FastAPI service owns the HTTP contract, project authentication, persistence, and Temporal workflow starts.
 
-Implemented through Phase 4, plus the first Phase 5 schema slice:
+Implemented through Phase 4, plus Phase 5 schema and snapshot creation:
 
 - Liveness and PostgreSQL readiness checks.
 - Alembic migrations executed at container startup.
@@ -30,9 +30,19 @@ their own projects. They exercise concurrent duplicate deliveries and competing
 completion snapshots through the actual HTTP endpoints, plus trace browsing, concurrent batch retries, and savepoint/rollback behavior.
 
 
-Phase 5 is being delivered in separate PRs. The initial schema PR adds no
-experiment HTTP routes or execution logic. The [execution contract](../docs/experiment-execution-contract.md)
+Phase 5 is being delivered in separate PRs. Schema and internal snapshot creation
+are implemented; experiment HTTP routes and execution logic are still pending. The [execution contract](../docs/experiment-execution-contract.md)
 records the seven-PR sequence, runner interface, source-history retention, and
 state semantics. Run `pytest tests/test_experiment_schema.py tests/test_experiment_contracts.py`
 for its checks. Set `TRACEGRADE_TEST_DATABASE_URL` to an isolated database
 migrated to head to repeat schema checks on PostgreSQL.
+
+
+The snapshot service stages frozen run inputs atomically and resolves matching
+project-scoped idempotency keys without re-reading live sources. Callers must
+commit the returned creation result before starting a workflow. Existing source
+mutation routes coordinate with snapshots through a project-row lock, and source
+deletions return 409 while a referencing experiment is pending/running. Run
+`pytest tests/test_experiment_snapshots.py tests/test_experiment_snapshots_postgres.py`
+for snapshot, rollback, deletion-guard, and PostgreSQL concurrency checks. The
+PostgreSQL file requires the isolated test database URL described above.
