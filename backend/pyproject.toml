@@ -27,7 +27,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["app*", "tracegrade_evaluators*"]
+include = ["app*", "tracegrade_evaluators*", "tracegrade_experiments*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
