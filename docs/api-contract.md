@@ -211,6 +211,24 @@ A processed batch returns `200 OK`, including when some or all items fail:
 | `PATCH` | `/datasets/{dataset_id}/cases/{case_id}` | Update a test case. |
 | `DELETE` | `/datasets/{dataset_id}/cases/{case_id}` | Delete a test case. |
 
+Dataset/test-case CRUD is implemented. Creates reject server-owned IDs and unknown
+fields. Names are trimmed, nonempty, and at most 120 characters; dataset names
+are case-sensitive and unique within a project. Descriptions may be null and are
+limited to 4,096 characters. Case names need not be unique. A case requires `name`
+and `input` (any finite JSON value, including null); `expected_output` defaults to
+null and `metadata` defaults to `{}`. Input/reference payloads are each limited to
+64 KiB of UTF-8 JSON; metadata must be an object of at most 16 KiB.
+
+PATCH requires at least one field and preserves omitted fields. Explicit null
+clears a description, input, or expected output; name and metadata cannot be
+null. Metadata updates replace the whole object. Dataset deletion cascades to
+its cases. Running-experiment deletion guards arrive with experiments in Phase 5.
+
+Lists use the common pagination envelope and order by creation time descending,
+then UUID descending. Nested case routes verify both dataset project ownership
+and case membership. Unknown/inaccessible resources return `dataset_not_found`
+or `test_case_not_found`; conflicting dataset names return `409 dataset_conflict`.
+
 ## Evaluators
 
 | Method | Path | Purpose |
@@ -222,6 +240,27 @@ A processed batch returns `200 OK`, including when some or all items fail:
 | `DELETE` | `/evaluators/{evaluator_id}` | Delete an evaluator not used by a running experiment. |
 
 Gemini-judge configuration stores a rubric and score/pass criteria. It does not expose provider routing or a prompt-management system.
+
+Evaluator CRUD is implemented. Names follow the dataset naming rules and are
+unique within a project. `type` is required at creation and immutable. `config`
+defaults to `{}` and is normalized with defaults on create/update:
+
+| Type | Accepted config |
+| --- | --- |
+| `exact_match`, `contains` | `case_sensitive: boolean = true`, `strip_whitespace: boolean = false` |
+| `json_match` | Empty object only. |
+| `gemini_judge` | Required `model` (`gemini-...` ID), required nonblank `rubric` (max 8,192 characters), `pass_threshold: number = 0.5` (0–1). |
+
+Unknown config keys, coercible strings in place of booleans/numbers, non-finite
+numbers, null config, and config above 16 KiB are rejected. Gemini credentials
+are never accepted in configuration. PATCH accepts `name` and/or `config`;
+config replaces the whole configuration and is checked against the stored type.
+Missing/inaccessible evaluators return `404 evaluator_not_found`; name conflicts
+return `409 evaluator_conflict`. Lists use the same stable ordering as datasets.
+
+Fixed-output scoring is available through the Python library in the
+[evaluation walkthrough](evaluation-walkthrough.md). There is no synchronous
+HTTP execution route; experiment execution and score persistence are Phase 5.
 
 ## Experiments and Results
 

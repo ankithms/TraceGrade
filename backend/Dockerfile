@@ -9,6 +9,7 @@ RUN addgroup --system tracegrade && adduser --system --ingroup tracegrade traceg
 
 COPY pyproject.toml README.md ./
 COPY app ./app
+COPY tracegrade_evaluators ./tracegrade_evaluators
 COPY alembic.ini ./
 COPY alembic ./alembic
 RUN pip install --no-cache-dir .

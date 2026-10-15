@@ -217,7 +217,23 @@ Project deletion is an explicit destructive operation and cascades through proje
 
 1. Projects and API keys.
 2. Traces and spans.
-3. Datasets and test cases.
-4. Evaluators and experiments.
+3. Datasets, test cases, and evaluators (`20261015_0003`).
+4. Experiments.
 5. Results and scores.
 6. Comparisons and regressions.
+
+## Phase 4 implementation
+
+Migration `20261015_0003` creates datasets, test cases, and evaluators, including
+project-local name constraints and the PostgreSQL `evaluator_type` enum. Deleting
+a project cascades to datasets and evaluators; deleting a dataset cascades to
+cases. Cases inherit project ownership through their dataset. The API always
+checks dataset ownership before accessing a nested case. `input` may contain
+JSON null, while the database column itself remains NOT NULL. The Python ORM
+maps the `metadata` column to `case_metadata` to avoid the declarative metadata
+attribute; the public API still calls it `metadata`.
+
+Experiment references, snapshots, and deletion restrictions are implemented
+with Phase 5; Phase 4 resources are editable and deletable before experiments
+exist. Evaluator type is immutable in the API, while config updates apply to
+future evaluations.

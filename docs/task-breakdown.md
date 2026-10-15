@@ -48,12 +48,14 @@ Acceptance: a sample Python call creates one visible trace with nested LLM metad
 
 ## Phase 4 — Datasets and Evaluators
 
-- [ ] Add dataset, test-case, and evaluator migrations/APIs.
-- [ ] Implement exact-match, contains, and JSON-match evaluators.
-- [ ] Implement Gemini judge with structured output validation.
-- [ ] Add evaluator unit tests, including invalid configuration and provider failure.
+- [x] Add dataset, test-case, and evaluator migrations/APIs.
+- [x] Implement exact-match, contains, and JSON-match evaluators.
+- [x] Implement Gemini judge with structured output validation.
+- [x] Add evaluator unit tests, including invalid configuration and provider failure.
 
 Acceptance: a project can define cases and obtain deterministic or Gemini-backed scores from fixed fixtures.
+
+Implementation and runnable fixtures: [Phase 4 walkthrough](evaluation-walkthrough.md). Gemini transport and failure cases are tested offline; live scoring requires a provider key and an available model.
 
 ## Phase 5 — Durable Experiments
 
