@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence } from "motion/react";
+import { Icon } from "./Icon";
+import { Welcome } from "./Welcome";
+import { ConnectionDialog } from "./ConnectionDialog";
 import type { FormEvent, ReactNode } from "react";
 import { apiUrl, duration, elapsed, request, spanTree } from "./api";
 import type { Connection, Span, Trace, TraceDetail, TracePage } from "./api";
@@ -16,7 +20,7 @@ const date = (value: string) =>
 function Status({ value }: { value: string }) {
   return (
     <span className={`badge ${value}`}>
-      <i />
+      <i aria-hidden="true" />
       {value === "ok" ? "Success" : value === "error" ? "Error" : "Running"}
     </span>
   );
@@ -65,7 +69,8 @@ function Copy({ value }: { value: string }) {
         timeout.current = setTimeout(() => setState("Copy ID"), 2000);
       }}
     >
-      {state}
+      <Icon name={state === "Copied" ? "check" : "copy"} />
+      <span aria-live="polite">{state}</span>
     </button>
   );
 }
@@ -75,7 +80,10 @@ function TraceView({ trace }: { trace: TraceDetail }) {
     trace.spans.find((s) => s.kind === "llm")?.id ?? trace.spans[0]?.id,
   );
   const [tab, setTab] = useState("Overview");
-  const span = trace.spans.find((s) => s.id === selected);
+  const span =
+    trace.spans.find((s) => s.id === selected) ??
+    trace.spans.find((s) => s.kind === "llm") ??
+    trace.spans[0];
   const tree = spanTree(trace.spans);
   const totalMs = Math.max(
     elapsed(trace) ?? Date.now() - Date.parse(trace.started_at),
@@ -123,7 +131,7 @@ function TraceView({ trace }: { trace: TraceDetail }) {
           }
           hint={
             costs.length
-              ? `${costs.length} spans report cost`
+              ? `${costs.length} ${costs.length === 1 ? "span reports" : "spans report"} cost`
               : "No cost recorded"
           }
         />
@@ -160,19 +168,19 @@ function TraceView({ trace }: { trace: TraceDetail }) {
             return (
               <button
                 key={s.id}
-                className={`span-row ${selected === s.id ? "selected" : ""}`}
+                className={`span-row ${span?.id === s.id ? "selected" : ""}`}
                 onClick={() => {
                   setSelected(s.id);
                   setTab("Overview");
                 }}
-                aria-pressed={selected === s.id}
+                aria-pressed={span?.id === s.id}
               >
                 <div
                   className="span-name"
                   style={{ paddingLeft: Math.min(depth, 6) * 16 }}
                 >
                   <span className={`span-icon ${s.status}`}>
-                    {s.kind === "llm" ? "✦" : "◇"}
+                    <Icon name={s.kind === "llm" ? "model" : "operation"} />
                   </span>
                   <span>
                     {s.name}
@@ -238,6 +246,7 @@ function TraceView({ trace }: { trace: TraceDetail }) {
                     key={t}
                     role="tab"
                     aria-selected={tab === t}
+                    tabIndex={tab === t ? 0 : -1}
                     id={`tab-${t}`}
                     aria-controls="span-content"
                     onClick={() => setTab(t)}
@@ -362,7 +371,12 @@ function App() {
   const [traceId, setTraceId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TraceDetail | null>(null);
   const [refresh, setRefresh] = useState(0);
-  const dialogRef = useRef<HTMLElement | null>(null);
+  const [loadedResource, setLoadedResource] = useState("");
+  const resourceKey = active
+    ? `${active.id}:${traceId ?? `page:${offset}`}`
+    : "";
+  const hasCurrentData = Boolean(active) && loadedResource === resourceKey;
+  const connectionOpener = useRef<HTMLElement | null>(null);
   const connectController = useRef<AbortController | null>(null);
   useEffect(() => () => connectController.current?.abort(), []);
   useEffect(() => {
@@ -373,7 +387,6 @@ function App() {
     const controller = new AbortController();
     setLoading(true);
     setError("");
-    setDetail(null);
     if (traceId) {
       request<TraceDetail>(
         `/traces/${encodeURIComponent(traceId)}`,
@@ -381,7 +394,10 @@ function App() {
         controller.signal,
       )
         .then((value) => {
-          if (!controller.signal.aborted) setDetail(value);
+          if (!controller.signal.aborted) {
+            setDetail(value);
+            setLoadedResource(resourceKey);
+          }
         })
         .catch((e) => {
           if (!controller.signal.aborted) setError(e.message);
@@ -396,7 +412,10 @@ function App() {
         controller.signal,
       )
         .then((value) => {
-          if (!controller.signal.aborted) setPage(value);
+          if (!controller.signal.aborted) {
+            setPage(value);
+            setLoadedResource(resourceKey);
+          }
         })
         .catch((e) => {
           if (!controller.signal.aborted) setError(e.message);
@@ -406,47 +425,9 @@ function App() {
         });
     }
     return () => controller.abort();
-  }, [active, offset, traceId, refresh]);
-  useEffect(() => {
-    if (!modal) return;
-    const previousFocus =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    const oldOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !connecting) {
-        setModal(false);
-        setKey("");
-      }
-      if (event.key !== "Tab") return;
-      const elements = dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), input:not(:disabled), [tabindex="0"]',
-      );
-      if (!elements?.length) {
-        event.preventDefault();
-        return;
-      }
-      const first = elements[0],
-        last = elements[elements.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      }
-      if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.body.style.overflow = oldOverflow;
-      document.removeEventListener("keydown", onKeyDown);
-      previousFocus?.focus();
-    };
-  }, [modal, connecting]);
+  }, [active, offset, traceId, refresh, resourceKey]);
   const switchProject = (id: string) => {
+    setLoadedResource("");
     setActiveId(id);
     setTraceId(null);
     setDetail(null);
@@ -501,470 +482,373 @@ function App() {
     .map(elapsed)
     .filter((ms): ms is number => ms !== null);
   const openConnection = () => {
+    connectionOpener.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     setModal(true);
     setConnectError("");
   };
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <a
-          className="brand"
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            setTraceId(null);
-          }}
-        >
-          <span className="brand-mark">↳</span>TraceGrade
-          <span className="version">BETA</span>
+    <>
+      <div className="app-shell" inert={modal}>
+        <a className="skip-link" href="#main-content">
+          Skip to content
         </a>
-        <div className="workspace-label">WORKSPACE</div>
-        <button className="nav-item current" onClick={() => setTraceId(null)}>
-          <span>≋</span> Traces <span className="nav-dot" />
-        </button>
-        <div className="sidebar-bottom">
-          <span className="tiny-label">OBSERVABILITY</span>
-          <p>
-            Follow every step.
-            <br />
-            Understand every run.
-          </p>
+        <aside className="sidebar">
           <a
-            href={`${apiUrl.replace(/\/api\/v1$/, "")}/docs`}
-            target="_blank"
-            rel="noreferrer"
+            className="brand"
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              setTraceId(null);
+            }}
           >
-            API documentation ↗
+            <span className="brand-mark">
+              <Icon name="trace" />
+            </span>
+            <span className="brand-name">TraceGrade</span>
+            <span className="version">BETA</span>
           </a>
-        </div>
-      </aside>
-      <div className="workspace">
-        <header className="topbar">
-          <div className="breadcrumb">
-            Workspace <span>/</span> <strong>Traces</strong>
-          </div>
-          <div className="connection-controls">
-            {active && (
-              <select
-                title={
-                  active?.projectId
-                    ? `Project ${active.projectId}`
-                    : "Connected projects"
-                }
-                aria-label="Select project"
-                value={activeId}
-                onChange={(e) => switchProject(e.target.value)}
-              >
-                {connections.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <button className="button compact" onClick={openConnection}>
-              {active ? "+ Add project" : "Connect project"}
+          <div className="workspace-label">Workspace</div>
+          <nav aria-label="Main navigation">
+            <button
+              className="nav-item current"
+              title="Traces"
+              aria-current="page"
+              onClick={() => setTraceId(null)}
+            >
+              <Icon name="layers" /> <span>Traces</span>
             </button>
+          </nav>
+          <div className="sidebar-bottom">
+            <a
+              href={`${apiUrl.replace(/\/api\/v1$/, "")}/docs`}
+              target="_blank"
+              title="API documentation (opens in a new tab)"
+              rel="noreferrer"
+            >
+              <Icon name="book" />
+              <span>API documentation</span>
+              <Icon name="external" />
+            </a>
           </div>
-        </header>
-        <main>
-          {!active ? (
-            <>
-              <div className="page-heading">
-                <div className="eyebrow">OBSERVABILITY</div>
-                <h1>Every run, in focus.</h1>
-                <p>
-                  Explore your application’s traces, from the first operation to
-                  the final response.
-                </p>
-              </div>
-              <section className="welcome">
-                <div className="welcome-copy">
-                  <div className="welcome-icon">↳</div>
-                  <h2>
-                    Your application has a story.
-                    <br />
-                    Start with a trace.
-                  </h2>
-                  <p>
-                    Connect a project to inspect model calls, follow nested
-                    spans, and see exactly where time and tokens go.
-                  </p>
-                  <button className="button primary" onClick={openConnection}>
-                    Connect your project <span>↗</span>
-                  </button>
-                  <small>Use a project API key from TraceGrade.</small>
-                </div>
-                <div className="welcome-diagram" aria-hidden="true">
-                  <div className="diagram-header">
-                    <span className="live-dot" /> YOUR NEXT REVIEW
-                  </div>
-                  <div className="diagram-node">
-                    ◇ <span>Review pipeline</span>
-                    <i>Success</i>
-                  </div>
-                  <div className="diagram-children">
-                    <div>
-                      ◇ <span>Load diff</span>
-                      <b>↗</b>
+        </aside>
+        <div className="workspace">
+          <header className="topbar">
+            <div className="breadcrumb">
+              Workspace <Icon name="chevron" />{" "}
+              <strong>{traceId ? "Trace details" : "Traces"}</strong>
+            </div>
+            <div className="connection-controls">
+              {active && (
+                <select
+                  title={
+                    active?.projectId
+                      ? `Project ${active.projectId}`
+                      : "Connected projects"
+                  }
+                  aria-label="Select project"
+                  value={activeId}
+                  onChange={(e) => switchProject(e.target.value)}
+                >
+                  {connections.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button className="button compact" onClick={openConnection}>
+                {active ? "+ Add project" : "Connect project"}
+              </button>
+            </div>
+          </header>
+          <main id="main-content" tabIndex={-1}>
+            {!active ? (
+              <Welcome onConnect={openConnection} />
+            ) : (
+              <>
+                <div className="toolbar">
+                  {traceId ? (
+                    <button
+                      className="back-button"
+                      onClick={() => setTraceId(null)}
+                    >
+                      <Icon name="back" /> All traces
+                    </button>
+                  ) : (
+                    <div className="project-context">
+                      <span className="live-dot" />
+                      {active.name}
                     </div>
-                    <div className="model-node">
-                      ✦ <span>Model review</span>
-                      <b>↗</b>
-                    </div>
-                    <div>
-                      ◇ <span>Publish review</span>
-                      <b>↗</b>
-                    </div>
+                  )}
+                  <div className="toolbar-actions">
+                    <button
+                      className="button compact"
+                      disabled={loading}
+                      onClick={() => setRefresh((n) => n + 1)}
+                    >
+                      <Icon name="refresh" /> Refresh
+                    </button>
+                    <button
+                      className="text-button"
+                      onClick={() => {
+                        const remaining = connections.filter(
+                          (c) => c.id !== activeId,
+                        );
+                        setConnections(remaining);
+                        switchProject(remaining[0]?.id ?? "");
+                      }}
+                    >
+                      Disconnect
+                    </button>
                   </div>
-                  <p>One trace. The complete picture.</p>
                 </div>
-              </section>
-              <div className="welcome-features">
-                <div>
-                  <span>01</span>
-                  <h3>Follow the execution</h3>
-                  <p>See how operations connect in a nested span hierarchy.</p>
-                </div>
-                <div>
-                  <span>02</span>
-                  <h3>Inspect the model call</h3>
-                  <p>Read captured inputs, responses, and provider usage.</p>
-                </div>
-                <div>
-                  <span>03</span>
-                  <h3>Find what went wrong</h3>
-                  <p>Pinpoint failed steps and their recorded errors.</p>
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="toolbar">
-                {traceId ? (
-                  <button
-                    className="back-button"
-                    onClick={() => setTraceId(null)}
-                  >
-                    ← All traces
-                  </button>
-                ) : (
-                  <div className="eyebrow">OBSERVABILITY / {active.name}</div>
+                {error && (
+                  <div className="error-box" role="alert">
+                    <strong>
+                      Could not load {traceId ? "trace" : "traces"}
+                    </strong>
+                    <p>{error}</p>
+                    {hasCurrentData && <p>Showing the last loaded data.</p>}
+                    <button
+                      className="button compact"
+                      onClick={() => setRefresh((n) => n + 1)}
+                    >
+                      Retry
+                    </button>
+                  </div>
                 )}
-                <div className="toolbar-actions">
-                  <button
-                    className="button compact"
-                    disabled={loading}
-                    onClick={() => setRefresh((n) => n + 1)}
-                  >
-                    ↻ Refresh
-                  </button>
-                  <button
-                    className="text-button"
-                    onClick={() => {
-                      const remaining = connections.filter(
-                        (c) => c.id !== activeId,
-                      );
-                      setConnections(remaining);
-                      switchProject(remaining[0]?.id ?? "");
-                    }}
-                  >
-                    Disconnect
-                  </button>
-                </div>
-              </div>
-              {error && (
-                <div className="error-box" role="alert">
-                  <strong>Could not load {traceId ? "trace" : "traces"}</strong>
-                  <p>{error}</p>
-                  <button
-                    className="button compact"
-                    onClick={() => setRefresh((n) => n + 1)}
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-              {loading ? (
-                <div className="loading" role="status">
-                  <span className="spinner" />
-                  Loading {traceId ? "trace details" : "traces"}…
-                </div>
-              ) : (
-                !error &&
-                (traceId ? (
-                  detail && (
-                    <TraceView
-                      key={`${active.id}-${detail.id}-${refresh}`}
-                      trace={detail}
-                    />
-                  )
+                {loading && hasCurrentData && (
+                  <div className="refresh-status" role="status">
+                    <span className="spinner" /> Updating{" "}
+                    {traceId ? "trace details" : "traces"}…
+                  </div>
+                )}
+                {loading && !hasCurrentData ? (
+                  <div className="loading" role="status">
+                    <span className="spinner" />
+                    Loading {traceId ? "trace details" : "traces"}…
+                  </div>
                 ) : (
-                  <>
-                    <div className="page-heading list-heading">
-                      <div>
-                        <h1>Traces</h1>
-                        <p>A closer look at every application run.</p>
-                      </div>
-                      <span className="project-pill">
-                        <span className="live-dot" />
-                        {active.name}
-                      </span>
-                    </div>
-                    <div className="metrics">
-                      <Metric
-                        label="Total traces"
-                        value={number.format(page.total)}
-                        hint="In this project"
+                  hasCurrentData &&
+                  (traceId ? (
+                    detail && (
+                      <TraceView
+                        key={`${active.id}-${detail.id}`}
+                        trace={detail}
                       />
-                      <Metric
-                        label="Success rate"
-                        value={
-                          completed.length
-                            ? `${Math.round((page.items.filter((t) => t.status === "ok").length / completed.length) * 100)}%`
-                            : "—"
-                        }
-                        hint="Completed traces on this page"
-                      />
-                      <Metric
-                        label="Average duration"
-                        value={duration(
-                          durations.length
-                            ? durations.reduce((a, b) => a + b, 0) /
-                                durations.length
-                            : null,
-                        )}
-                        hint="Completed traces on this page"
-                      />
-                      <Metric
-                        label="Errors"
-                        value={
-                          page.items.filter((t) => t.status === "error").length
-                        }
-                        hint="On this page"
-                      />
-                    </div>
-                    <section className="trace-table">
-                      <div className="table-toolbar">
-                        <label className="search">
-                          <span aria-hidden="true">⌕</span>
-                          <input
-                            aria-label="Search traces on this page"
-                            placeholder="Search this page by name, ID, or metadata…"
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                          />
-                        </label>
-                        <select
-                          aria-label="Filter status on this page"
-                          value={filter}
-                          onChange={(e) => setFilter(e.target.value)}
-                        >
-                          <option value="all">All statuses</option>
-                          <option value="ok">Success</option>
-                          <option value="error">Error</option>
-                          <option value="running">Running</option>
-                        </select>
-                      </div>
-                      {!page.total ? (
-                        <div className="empty-state">
-                          <span>◇</span>
-                          <h2>Your first trace starts here.</h2>
-                          <p>
-                            This key is connected. Run your instrumented
-                            application, then refresh to see its traces.
-                          </p>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="table-scroll">
-                            <table>
-                              <thead>
-                                <tr>
-                                  <th>TRACE NAME</th>
-                                  <th>STATUS</th>
-                                  <th>STARTED · LOCAL TIME</th>
-                                  <th>DURATION</th>
-                                  <th>REPOSITORY</th>
-                                  <th>
-                                    <span className="sr-only">Open</span>
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {visible.map((t: Trace) => (
-                                  <tr key={t.id}>
-                                    <td>
-                                      <button
-                                        className="trace-link"
-                                        onClick={() => setTraceId(t.id)}
-                                      >
-                                        {t.name}
-                                      </button>
-                                      <code className="trace-short-id">
-                                        {t.id.slice(0, 8)}
-                                      </code>
-                                    </td>
-                                    <td>
-                                      <Status value={t.status} />
-                                    </td>
-                                    <td className="date-cell">
-                                      {date(t.started_at)}
-                                    </td>
-                                    <td className="mono">
-                                      {duration(elapsed(t))}
-                                    </td>
-                                    <td className="repository">
-                                      {typeof t.attributes.repository ===
-                                      "string"
-                                        ? t.attributes.repository
-                                        : "—"}
-                                    </td>
-                                    <td>
-                                      <button
-                                        className="open-trace"
-                                        aria-label={`Open ${t.name} ${t.id.slice(0, 8)}`}
-                                        onClick={() => setTraceId(t.id)}
-                                      >
-                                        ↗
-                                      </button>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                          {!visible.length && (
-                            <div className="empty-value">
-                              No matching traces on this page. Try another
-                              search or status.
-                            </div>
-                          )}
-                        </>
-                      )}
-                      <div className="pagination">
-                        <span>
-                          {page.total
-                            ? `${offset + 1}–${Math.min(offset + PAGE_SIZE, page.total)} of ${number.format(page.total)} traces`
-                            : "0 traces"}
-                        </span>
+                    )
+                  ) : (
+                    <>
+                      <div className="page-heading list-heading">
                         <div>
-                          <button
-                            className="button compact"
-                            disabled={offset === 0 || loading}
-                            onClick={() =>
-                              setOffset((n) => Math.max(0, n - PAGE_SIZE))
-                            }
-                          >
-                            ← Previous
-                          </button>
-                          <button
-                            className="button compact"
-                            disabled={
-                              offset + PAGE_SIZE >= page.total || loading
-                            }
-                            onClick={() => setOffset((n) => n + PAGE_SIZE)}
-                          >
-                            Next →
-                          </button>
+                          <h1>Traces</h1>
+                          <p>A closer look at every application run.</p>
                         </div>
+                        <span className="project-pill">
+                          <span className="live-dot" />
+                          {active.name}
+                        </span>
                       </div>
-                    </section>
-                  </>
-                ))
-              )}
-            </>
-          )}
-          <footer>
-            TraceGrade{" "}
-            <span>Application observability, one trace at a time.</span>
-          </footer>
-        </main>
+                      <div className="metrics">
+                        <Metric
+                          label="Total traces"
+                          value={number.format(page.total)}
+                          hint="In this project"
+                        />
+                        <Metric
+                          label="Success rate"
+                          value={
+                            completed.length
+                              ? `${Math.round((page.items.filter((t) => t.status === "ok").length / completed.length) * 100)}%`
+                              : "—"
+                          }
+                          hint="Completed traces on this page"
+                        />
+                        <Metric
+                          label="Average duration"
+                          value={duration(
+                            durations.length
+                              ? durations.reduce((a, b) => a + b, 0) /
+                                  durations.length
+                              : null,
+                          )}
+                          hint="Completed traces on this page"
+                        />
+                        <Metric
+                          label="Errors"
+                          value={
+                            page.items.filter((t) => t.status === "error")
+                              .length
+                          }
+                          hint="On this page"
+                        />
+                      </div>
+                      <section className="trace-table">
+                        <div className="table-toolbar">
+                          <label className="search">
+                            <Icon name="search" />
+                            <input
+                              aria-label="Search traces on this page"
+                              placeholder="Search this page by name, ID, or metadata…"
+                              value={query}
+                              onChange={(e) => setQuery(e.target.value)}
+                            />
+                          </label>
+                          <select
+                            aria-label="Filter status on this page"
+                            value={filter}
+                            onChange={(e) => setFilter(e.target.value)}
+                          >
+                            <option value="all">All statuses</option>
+                            <option value="ok">Success</option>
+                            <option value="error">Error</option>
+                            <option value="running">Running</option>
+                          </select>
+                        </div>
+                        {!page.total ? (
+                          <div className="empty-state">
+                            <Icon name="layers" />
+                            <h2>Your first trace starts here.</h2>
+                            <p>
+                              This key is connected. Run your instrumented
+                              application, then refresh to see its traces.
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <div
+                              className="table-scroll"
+                              role="region"
+                              aria-label="Traces, scroll horizontally for more columns"
+                              tabIndex={0}
+                            >
+                              <table>
+                                <thead>
+                                  <tr>
+                                    <th scope="col">Trace name</th>
+                                    <th scope="col">Status</th>
+                                    <th scope="col">Started · local time</th>
+                                    <th scope="col">Duration</th>
+                                    <th scope="col">Repository</th>
+                                    <th>
+                                      <span className="sr-only">Open</span>
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {visible.map((t: Trace) => (
+                                    <tr key={t.id}>
+                                      <td>
+                                        <button
+                                          className="trace-link"
+                                          onClick={() => setTraceId(t.id)}
+                                        >
+                                          {t.name}
+                                        </button>
+                                        <code className="trace-short-id">
+                                          {t.id.slice(0, 8)}
+                                        </code>
+                                      </td>
+                                      <td>
+                                        <Status value={t.status} />
+                                      </td>
+                                      <td className="date-cell">
+                                        {date(t.started_at)}
+                                      </td>
+                                      <td className="mono">
+                                        {duration(elapsed(t))}
+                                      </td>
+                                      <td className="repository">
+                                        {typeof t.attributes.repository ===
+                                        "string"
+                                          ? t.attributes.repository
+                                          : "—"}
+                                      </td>
+                                      <td>
+                                        <button
+                                          className="open-trace"
+                                          aria-label={`Open ${t.name} ${t.id.slice(0, 8)}`}
+                                          onClick={() => setTraceId(t.id)}
+                                        >
+                                          <Icon name="chevron" />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                            {!visible.length && (
+                              <div className="empty-value">
+                                No matching traces on this page. Try another
+                                search or status.
+                              </div>
+                            )}
+                          </>
+                        )}
+                        <div className="pagination">
+                          <span>
+                            {page.total
+                              ? `${offset + 1}–${Math.min(offset + PAGE_SIZE, page.total)} of ${number.format(page.total)} traces`
+                              : "0 traces"}
+                          </span>
+                          <div>
+                            <button
+                              className="button compact"
+                              disabled={offset === 0 || loading}
+                              onClick={() =>
+                                setOffset((n) => Math.max(0, n - PAGE_SIZE))
+                              }
+                            >
+                              <Icon name="back" /> Previous
+                            </button>
+                            <button
+                              className="button compact"
+                              disabled={
+                                offset + PAGE_SIZE >= page.total || loading
+                              }
+                              onClick={() => setOffset((n) => n + PAGE_SIZE)}
+                            >
+                              Next <Icon name="arrow" />
+                            </button>
+                          </div>
+                        </div>
+                      </section>
+                    </>
+                  ))
+                )}
+              </>
+            )}
+            <footer>
+              TraceGrade{" "}
+              <span>Application observability, one trace at a time.</span>
+            </footer>
+          </main>
+        </div>
       </div>
-      {modal && (
-        <div
-          className="modal-backdrop"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !connecting) {
+      <AnimatePresence>
+        {modal && (
+          <ConnectionDialog
+            key="connection"
+            opener={connectionOpener.current}
+            name={name}
+            projectKey={key}
+            connecting={connecting}
+            error={connectError}
+            onName={setName}
+            onKey={setKey}
+            onClose={() => {
               setModal(false);
               setKey("");
-            }
-          }}
-        >
-          <section
-            ref={dialogRef}
-            className="connection-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="connect-title"
-          >
-            <form onSubmit={connect}>
-              <div className="modal-heading">
-                <span className="eyebrow">PROJECT CONNECTION</span>
-                <button
-                  type="button"
-                  className="text-button"
-                  disabled={connecting}
-                  onClick={() => {
-                    setModal(false);
-                    setKey("");
-                  }}
-                  aria-label="Close connection dialog"
-                >
-                  ✕
-                </button>
-              </div>
-              <h2 id="connect-title">Bring your traces into view.</h2>
-              <p>
-                Use the key for the project you want to explore. Each project
-                key can read only its own traces.
-              </p>
-              <label>
-                Project label
-                <input
-                  autoFocus
-                  required
-                  maxLength={80}
-                  placeholder="e.g. AI Code Review Assistant"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  disabled={connecting}
-                />
-              </label>
-              <label>
-                Project API key
-                <input
-                  type="password"
-                  required
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder="tg_…"
-                  value={key}
-                  onChange={(e) => setKey(e.target.value)}
-                  disabled={connecting}
-                />
-              </label>
-              <p className="connection-note">
-                Connections stay in memory for this page. Reloading clears your
-                keys.
-              </p>
-              {connectError && (
-                <div className="error-box" role="alert">
-                  {connectError}
-                </div>
-              )}
-              <button
-                className="button primary"
-                disabled={connecting || !name.trim() || !key.trim()}
-                type="submit"
-              >
-                {connecting ? "Connecting…" : "Connect project →"}
-              </button>
-            </form>
-          </section>
-        </div>
-      )}
-    </div>
+            }}
+            onSubmit={connect}
+          />
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 export default App;

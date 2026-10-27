@@ -90,7 +90,13 @@ async function connect(
   );
   await user.type(screen.getByLabelText("Project label"), name);
   await user.type(screen.getByLabelText("Project API key"), key);
-  await user.click(screen.getByRole("button", { name: "Connect project →" }));
+  await user.click(
+    within(screen.getByRole("dialog")).getByRole("button", {
+      name: "Connect project",
+    }),
+  );
+  if (!screen.queryByRole("alert"))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 }
 
 describe("trace browser", () => {
@@ -192,7 +198,7 @@ describe("trace browser", () => {
     const user = userEvent.setup();
     render(<App />);
     await connect(user);
-    await user.click(await screen.findByRole("button", { name: "Next →" }));
+    await user.click(await screen.findByRole("button", { name: "Next" }));
     expect(
       await screen.findByRole("button", { name: "Second page review" }),
     ).toBeTruthy();
@@ -228,7 +234,9 @@ describe("trace browser", () => {
   it("keeps connection keyboard focus inside the dialog and closes on Escape", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "Connect project" }));
+    const opener = screen.getByRole("button", { name: "Connect project" });
+    await user.click(opener);
+    expect(document.activeElement).toBe(screen.getByLabelText("Project label"));
     const close = screen.getByRole("button", {
       name: "Close connection dialog",
     });
@@ -239,6 +247,64 @@ describe("trace browser", () => {
     );
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(opener);
+  });
+  it("keeps the selected span and tab visible while refreshing, including a failed refresh", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await connect(user);
+    await user.click(
+      await screen.findByRole("button", { name: "Real code review" }),
+    );
+    await user.click(await screen.findByRole("tab", { name: "Output" }));
+    let finish!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(screen.getByRole("status").textContent).toContain(
+      "Updating trace details",
+    );
+    expect(screen.getByRole("tabpanel").textContent).toContain("Looks good");
+    finish(new Response(JSON.stringify(detail)));
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    expect(
+      screen.getByRole("tab", { name: "Output" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 500 }));
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "HTTP 500",
+    );
+    expect(screen.getByRole("tabpanel").textContent).toContain("Looks good");
+  });
+
+  it("uses a single keyboard tab stop and arrow-key navigation for span tabs", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await connect(user);
+    await user.click(
+      await screen.findByRole("button", { name: "Real code review" }),
+    );
+    const overview = await screen.findByRole("tab", { name: "Overview" });
+    overview.focus();
+    await user.keyboard("{ArrowRight}");
+    const input = screen.getByRole("tab", { name: "Input" });
+    expect(document.activeElement).toBe(input);
+    expect(input.tabIndex).toBe(0);
+    expect(overview.tabIndex).toBe(-1);
+    expect(screen.getByRole("tabpanel").textContent).toContain(
+      "Review this diff",
+    );
+    await user.keyboard("{End}");
+    expect(document.activeElement).toBe(
+      screen.getByRole("tab", { name: "Attributes" }),
+    );
+    await user.keyboard("{Home}");
+    expect(document.activeElement).toBe(overview);
   });
 });
 
