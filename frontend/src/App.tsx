@@ -495,7 +495,7 @@ function App() {
         <a className="skip-link" href="#main-content">
           Skip to content
         </a>
-        <aside className="sidebar">
+        <header className="topbar">
           <a
             className="brand"
             href="#"
@@ -510,7 +510,6 @@ function App() {
             <span className="brand-name">TraceGrade</span>
             <span className="version">BETA</span>
           </a>
-          <div className="workspace-label">Workspace</div>
           <nav aria-label="Main navigation">
             <button
               className="nav-item current"
@@ -521,7 +520,7 @@ function App() {
               <Icon name="layers" /> <span>Traces</span>
             </button>
           </nav>
-          <div className="sidebar-bottom">
+          <div className="documentation-link">
             <a
               href={`${apiUrl.replace(/\/api\/v1$/, "")}/docs`}
               target="_blank"
@@ -533,37 +532,31 @@ function App() {
               <Icon name="external" />
             </a>
           </div>
-        </aside>
+          <div className="connection-controls">
+            {active && (
+              <select
+                title={
+                  active?.projectId
+                    ? `Project ${active.projectId}`
+                    : "Connected projects"
+                }
+                aria-label="Select project"
+                value={activeId}
+                onChange={(e) => switchProject(e.target.value)}
+              >
+                {connections.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button className="button compact" onClick={openConnection}>
+              {active ? "+ Add project" : "Connect project"}
+            </button>
+          </div>
+        </header>
         <div className="workspace">
-          <header className="topbar">
-            <div className="breadcrumb">
-              Workspace <Icon name="chevron" />{" "}
-              <strong>{traceId ? "Trace details" : "Traces"}</strong>
-            </div>
-            <div className="connection-controls">
-              {active && (
-                <select
-                  title={
-                    active?.projectId
-                      ? `Project ${active.projectId}`
-                      : "Connected projects"
-                  }
-                  aria-label="Select project"
-                  value={activeId}
-                  onChange={(e) => switchProject(e.target.value)}
-                >
-                  {connections.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <button className="button compact" onClick={openConnection}>
-                {active ? "+ Add project" : "Connect project"}
-              </button>
-            </div>
-          </header>
           <main id="main-content" tabIndex={-1}>
             {!active ? (
               <Welcome onConnect={openConnection} />
@@ -578,9 +571,9 @@ function App() {
                       <Icon name="back" /> All traces
                     </button>
                   ) : (
-                    <div className="project-context">
-                      <span className="live-dot" />
-                      {active.name}
+                    <div className="page-heading">
+                      <h1>Traces</h1>
+                      <p>Explore every run, from request to response.</p>
                     </div>
                   )}
                   <div className="toolbar-actions">
@@ -642,16 +635,6 @@ function App() {
                     )
                   ) : (
                     <>
-                      <div className="page-heading list-heading">
-                        <div>
-                          <h1>Traces</h1>
-                          <p>A closer look at every application run.</p>
-                        </div>
-                        <span className="project-pill">
-                          <span className="live-dot" />
-                          {active.name}
-                        </span>
-                      </div>
                       <div className="metrics">
                         <Metric
                           label="Total traces"
@@ -692,7 +675,7 @@ function App() {
                             <Icon name="search" />
                             <input
                               aria-label="Search traces on this page"
-                              placeholder="Search this page by name, ID, or metadata…"
+                              placeholder="Search this page…"
                               value={query}
                               onChange={(e) => setQuery(e.target.value)}
                             />
