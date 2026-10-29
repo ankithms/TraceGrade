@@ -3,6 +3,7 @@ import { AnimatePresence } from "motion/react";
 import { Icon } from "./Icon";
 import { Welcome } from "./Welcome";
 import { ConnectionDialog } from "./ConnectionDialog";
+import { RecordedData } from "./RecordedData";
 import type { FormEvent, ReactNode } from "react";
 import { apiUrl, duration, elapsed, request, spanTree } from "./api";
 import type { Connection, Span, Trace, TraceDetail, TracePage } from "./api";
@@ -23,15 +24,6 @@ function Status({ value }: { value: string }) {
       <i aria-hidden="true" />
       {value === "ok" ? "Success" : value === "error" ? "Error" : "Running"}
     </span>
-  );
-}
-function Code({ value }: { value: unknown }) {
-  return value === null || value === undefined ? (
-    <div className="empty-value">No value recorded.</div>
-  ) : (
-    <pre>
-      {typeof value === "string" ? value : JSON.stringify(value, null, 2)}
-    </pre>
   );
 }
 function Metric({
@@ -317,7 +309,9 @@ function TraceView({ trace }: { trace: TraceDetail }) {
                     </p>
                   </>
                 ) : (
-                  <Code
+                  <RecordedData
+                    key={`${span.id}-${tab}`}
+                    attributes={tab === "Attributes"}
                     value={
                       tab === "Input"
                         ? span.input
@@ -341,7 +335,7 @@ function TraceView({ trace }: { trace: TraceDetail }) {
           Trace attributes{" "}
           <span>Repository, commit, and application metadata</span>
         </summary>
-        <Code value={trace.attributes} />
+        <RecordedData value={trace.attributes} attributes />
         <dl className="properties">
           <dt>Project ID</dt>
           <dd className="mono">{trace.project_id}</dd>

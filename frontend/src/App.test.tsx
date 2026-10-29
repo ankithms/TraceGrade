@@ -110,10 +110,19 @@ describe("trace browser", () => {
     expect((await screen.findAllByText("15")).length).toBe(2);
     await user.click(screen.getByRole("tab", { name: "Output" }));
     expect(screen.getByRole("tabpanel").textContent).toContain("Looks good");
+    expect(screen.getByRole("tabpanel").querySelector("pre")).toBeNull();
+    await user.click(within(screen.getByRole("tabpanel")).getByRole("button", { name: "View JSON" }));
+    expect(screen.getByRole("tabpanel").querySelector("pre")?.textContent).toBe(
+      JSON.stringify(model.output, null, 2),
+    );
     await user.click(screen.getByRole("tab", { name: "Input" }));
+    expect(screen.getByRole("tabpanel").querySelector("pre")).toBeNull();
     expect(screen.getByRole("tabpanel").textContent).toContain(
       "Review this diff",
     );
+    await user.click(screen.getByRole("tab", { name: "Attributes" }));
+    expect(within(screen.getByRole("tabpanel")).getByText("repository").tagName).toBe("DT");
+    expect(within(screen.getByRole("tabpanel")).getByText("owner/repo")).toBeTruthy();
     await user.click(
       screen.getByRole("button", { name: /publish review Operation/ }),
     );
